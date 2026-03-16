@@ -3,7 +3,6 @@ import { createClient } from "@my-app/api/client";
 const client = createClient("http://localhost:7071");
 
 async function main() {
-  // GET /api/todos/{id} — params 必須、body なし
   const res = await client.getTodo({ params: { id: "550e8400-e29b-41d4-a716-446655440000" } });
   if (res.ok) {
     const todo = await res.json();
@@ -11,9 +10,7 @@ async function main() {
     console.log(todo.completed);
   }
 
-  // POST /api/todos — params なし、body 必須
   const res2 = await client.createTodo({ body: { title: "Buy milk" } });
-  console.log(res2.status);
   const newTodo = await res2.json();
   console.log(newTodo.id);
 }

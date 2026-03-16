@@ -1,13 +1,11 @@
-import type { FunctionDefinition, InferResponse } from "../lib/typed-api.js";
+import type { FunctionDefinition } from "../lib/define-function.js";
 import { z } from "zod";
 
-// --- fetch Response に型付き json() を追加 ---
+type InferResponse<T> = T extends FunctionDefinition<any, infer R> ? R : never;
 
-interface TypedResponse<T> extends Response {
+export interface TypedResponse<T> extends Response {
   json(): Promise<T>;
 }
-
-// --- params/body の有無に応じた入力型を構築 ---
 
 type ClientInput<T> = T extends FunctionDefinition<infer C, any>
   ? (z.infer<C["params"]> extends Record<string, never>
@@ -20,13 +18,9 @@ type ClientMethod<T> = keyof ClientInput<T> extends never
   ? () => Promise<TypedResponse<InferResponse<T>>>
   : (input: ClientInput<T>) => Promise<TypedResponse<InferResponse<T>>>;
 
-// --- 関数マップからメソッドマップを生成 ---
-
-export type ApiClient<T extends Record<string, FunctionDefinition<any, any>>> = {
+type ApiClient<T extends Record<string, FunctionDefinition<any, any>>> = {
   [K in keyof T]: ClientMethod<T[K]>;
 };
-
-// --- URL 構築 ---
 
 function buildUrl(
   baseUrl: string,
@@ -39,8 +33,6 @@ function buildUrl(
   }
   return `${baseUrl}/api/${path}`;
 }
-
-// --- 汎用クライアント生成 ---
 
 export function createClient<
   T extends Record<string, FunctionDefinition<any, any>>,

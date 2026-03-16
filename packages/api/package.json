@@ -13,6 +13,11 @@
       "default": "./dist/src/client/index.js"
     }
   },
+  "typesVersions": {
+    "*": {
+      "client": ["./dist/src/client/index.d.ts"]
+    }
+  },
   "scripts": {
     "build": "tsc",
     "start": "func start"

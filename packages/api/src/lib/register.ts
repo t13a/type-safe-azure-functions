@@ -5,7 +5,7 @@ import {
   type InvocationContext,
 } from "@azure/functions";
 import { z } from "zod";
-import type { FunctionDefinition } from "./typed-api.js";
+import type { FunctionDefinition } from "./define-function.js";
 
 export function registerAll(
   functions: Record<string, FunctionDefinition<any, any>>,

@@ -1,33 +1,46 @@
 # azure-functions-hands-on
 
-Azure Functions v4 + TypeScript + Zod で型安全な API 通信を実現する実験プロジェクト。
+> If you can use [Hono](https://hono.dev/docs/guides/rpc), use Hono. This exists because some of us are not that fortunate.
 
-## 何をしているのか
+Type-safe API communication for Azure Functions v4, inspired by Hono RPC. Response types are inferred from handler implementations — no hand-written response schemas needed.
 
-Zod スキーマを **単一の情報源** として、サーバー (Azure Functions) とクライアント (ブラウザ fetch) の間でリクエスト・レスポンスの型を共有する。tRPC や Hono RPC に似た体験を、Azure Functions のプログラミングモデル (`app.http()` + `InvocationContext`) を壊さずに得る。
+## How it works
 
 ```
-routes.ts (Zod スキーマ)
-    │
-    ├──→ API ハンドラー: リクエスト検証 + レスポンス検証 + 型推論
-    │
-    └──→ クライアント: 型安全な fetch + 型推論
+defineFunction()          →  Route + handler in one place (no side effects)
+  ↓
+registerAll()             →  Registers with app.http() at startup
+  ↓
+createClient(baseUrl)     →  Typed client, response types flow automatically
 ```
 
-スキーマを変更すれば、TypeScript が即座にサーバーとクライアントの両方で型エラーを出す。コード生成は不要。
+Change the handler's return value and TypeScript will flag mismatches on both server and client. No code generation required.
 
-## プロジェクト構成
+## Project structure
 
 ```
 packages/
-├── shared/   Zod ルート定義（型の単一の情報源）
-├── api/      Azure Functions ハンドラー
-└── client/   型安全な fetch ラッパー
+├── api/
+│   ├── src/
+│   │   ├── lib/
+│   │   │   ├── define-function.ts   # defineFunction + types (no @azure/functions runtime dep)
+│   │   │   └── register.ts         # registerAll (calls app.http())
+│   │   ├── functions/
+│   │   │   ├── index.ts            # Function map (shared by server and client)
+│   │   │   ├── get-todo.ts
+│   │   │   └── create-todo.ts
+│   │   ├── client/
+│   │   │   ├── index.ts            # Pre-configured client factory
+│   │   │   └── create-client.ts    # Generic typed client
+│   │   ├── app.ts                  # Azure Functions entry point
+│   │   └── index.ts                # Server-side barrel export
+│   └── package.json
+└── client/                         # Usage example
+    └── src/
+        └── example.ts
 ```
 
-npm workspaces と TypeScript project references で接続している。
-
-## 使い方
+## Quick start
 
 ```bash
 npm install
@@ -35,163 +48,97 @@ npx tsc --build
 cd packages/api && func start
 ```
 
-## 仕組み
+## Defining functions
 
-### 1. ルート定義 (`packages/shared/src/routes.ts`)
-
-`defineRoute()` で HTTP メソッド、パス、パラメータ、ボディ、レスポンスの Zod スキーマをまとめて定義する。
+Use `defineFunction()` to declare a route and its handler together. No `as const`, no separate route definitions, no response schemas.
 
 ```typescript
 import { z } from "zod";
-import { defineRoute } from "./typed-api.js";
+import { defineFunction } from "../lib/define-function.js";
 
-export const TodoSchema = z.object({
-  id: z.string().uuid(),
-  title: z.string().min(1),
-  completed: z.boolean(),
-});
+export const createTodo = defineFunction(
+  {
+    method: "POST",
+    route: "todos",
+    body: z.object({
+      title: z.string().min(1),
+      completed: z.boolean().optional().default(false),
+    }),
+    // params and body are optional — omit when not needed
+  },
+  async (request, context, { body }) => {
+    context.log(`Creating todo: ${body.title}`);
 
-export const getTodo = defineRoute({
-  method: "GET" as const,
-  route: "todos/{id}",
-  params: z.object({ id: z.string().uuid() }),
-  body: z.void(),
-  response: TodoSchema,
-});
-
-export const createTodo = defineRoute({
-  method: "POST" as const,
-  route: "todos",
-  params: z.object({}),
-  body: z.object({
-    title: z.string().min(1),
-    completed: z.boolean().optional().default(false),
-  }),
-  response: TodoSchema,
-});
+    return {
+      jsonBody: {           // ← response type inferred from here
+        id: crypto.randomUUID(),
+        title: body.title,
+        completed: body.completed,
+      },
+    };
+  },
+);
 ```
 
-`defineRoute()` はただの identity 関数で、TypeScript にジェネリクスを推論させるためだけに存在する。ランタイムコストはゼロ。
+The handler signature extends the standard Azure Functions convention — `request` and `context` come first, with a single `parsed` argument added for validated input.
 
-### 2. API ハンドラー (`packages/api/src/functions/`)
+## Registering functions
 
-`registerRoute()` がルート定義を受け取り、`app.http()` の登録と Zod バリデーションを自動で行う。
+Side effects are isolated to `app.ts`, the Azure Functions entry point:
 
 ```typescript
-import { registerRoute } from "../helpers/validated-handler.js";
-import { createTodo } from "@my-app/shared";
+import { registerAll } from "./lib/register.js";
+import { functions } from "./functions/index.js";
 
-registerRoute("createTodo", createTodo, async (req) => {
-  // req.body.title は string 型 (Zod スキーマから推論)
-  // req.context は InvocationContext (Azure Functions のまま)
-  req.context.log(`Creating todo: ${req.body.title}`);
-
-  return {
-    id: crypto.randomUUID(),
-    title: req.body.title,
-    completed: req.body.completed,
-  };
-  // 戻り値が TodoSchema に合わない → コンパイルエラー
-});
+registerAll(functions);
 ```
 
-ハンドラーが受け取る `req` の中身:
+The function map in `functions/index.ts` is shared between server registration and the client.
 
-| プロパティ | 型 | 説明 |
-|---|---|---|
-| `params` | Zod スキーマから推論 | パスパラメータ (検証済み) |
-| `body` | Zod スキーマから推論 | リクエストボディ (検証済み) |
-| `context` | `InvocationContext` | Azure Functions のコンテキスト |
-| `raw` | `HttpRequest` | 生のリクエスト (ヘッダー、クエリ等) |
-
-バリデーションエラー時は自動的に 400 + 構造化エラーを返す:
-
-```json
-{ "errors": { "fieldErrors": { "id": ["Invalid uuid"] } } }
-```
-
-### 3. クライアント (`packages/client/src/api-client.ts`)
+## Client usage
 
 ```typescript
-import { createApiClient } from "@my-app/client";
-import { getTodo, createTodo } from "@my-app/shared";
+import { createClient } from "@my-app/api/client";
 
-const api = createApiClient("http://localhost:7071");
+const client = createClient("http://localhost:7071");
 
-// GET — params のみ
-const todo = await api.request(getTodo, { id: "550e8400-..." });
-//    ^? { id: string; title: string; completed: boolean }
-
-// POST — params + body
-const newTodo = await api.request(createTodo, {}, { title: "Buy milk" });
-
-// コンパイルエラーの例:
-await api.request(getTodo, { id: 123 });        // number は不可
-await api.request(createTodo, {}, {});           // title は必須
-```
-
-GET/DELETE は body 引数なし、POST/PUT/PATCH は body 引数あり — ルート定義の `method` から自動判定される。
-
-## `defineRoute()` の型定義 (`packages/shared/src/typed-api.ts`)
-
-全体で約 30 行:
-
-```typescript
-import { z } from "zod";
-
-export interface RouteDefinition<
-  TMethod extends string,
-  TPath extends string,
-  TParams extends z.ZodTypeAny,
-  TBody extends z.ZodTypeAny,
-  TResponse extends z.ZodTypeAny,
-> {
-  method: TMethod;
-  route: TPath;
-  params: TParams;
-  body: TBody;
-  response: TResponse;
+const res = await client.getTodo({ params: { id: "550e8400-..." } });
+if (res.ok) {
+  const todo = await res.json();
+  // todo: { id: string; title: string; completed: boolean }
 }
 
-export function defineRoute<
-  TMethod extends string,
-  TPath extends string,
-  TParams extends z.ZodTypeAny,
-  TBody extends z.ZodTypeAny,
-  TResponse extends z.ZodTypeAny,
->(def: RouteDefinition<TMethod, TPath, TParams, TBody, TResponse>) {
-  return def;
-}
-
-export type InferParams<R> =
-  R extends RouteDefinition<any, any, infer P, any, any> ? z.infer<P> : never;
-export type InferBody<R> =
-  R extends RouteDefinition<any, any, any, infer B, any> ? z.infer<B> : never;
-export type InferResponse<R> =
-  R extends RouteDefinition<any, any, any, any, infer Res>
-    ? z.infer<Res>
-    : never;
+const res2 = await client.createTodo({ body: { title: "Buy milk" } });
+const newTodo = await res2.json();
 ```
 
-## 設計判断メモ
+The client returns a standard `Response` with a typed `json()` method. Check `res.ok` yourself — no magic error throwing.
 
-**なぜ tRPC を使わないのか** — tRPC は独自のルーターとミドルウェア体系を持ち込む。Azure Functions の `app.http()` + `InvocationContext` と噛み合わせるのが難しく、依存も大きい。ここでは全体で約 150 行のアプリケーションコードで同等の型安全性を得ている。
+## Adding a new endpoint
 
-**なぜ Hono RPC を使わないのか** — [hono-azurefunc-adapter](https://github.com/Marplex/hono-azurefunc-adapter) 経由で Azure Functions 上に Hono を載せることはできるが、関数内で `InvocationContext` を扱えないという制約がある。
+1. Create a new file in `packages/api/src/functions/` with `defineFunction()`
+2. Add it to the function map in `functions/index.ts`
+3. Done — the client picks it up automatically
 
-**`z.void()` でボディなしを表現** — `z.infer<z.ZodVoid>` は `void` になる。クライアント側の条件付き引数と自然に噛み合う。
+## Response type inference
 
-**レスポンスも検証する理由** — ハンドラーが契約と異なるデータを返すバグを開発中に即座に検出できる。本番では `route.response.parse()` を外してパフォーマンスを優先してもよい。
+The response type is inferred from what you return:
 
-**`raw` (HttpRequest) を渡す理由** — ヘッダー、クエリパラメータ、ストリーミングなど、Zod スキーマでカバーしきれない部分へのエスケープハッチ。
+| Return shape | Inferred client type |
+|---|---|
+| `{ jsonBody: { id: string } }` | `{ id: string }` |
+| `{ body: "raw string" }` | `unknown` |
+| `{ status: 204 }` | `void` |
 
-## エンドポイントの追加方法
+## Why not X?
 
-1. `packages/shared/src/routes.ts` に `defineRoute()` を追加し、`index.ts` から export する
-2. `packages/api/src/functions/` に新しいファイルを作り `registerRoute()` で登録する
-3. 終わり — クライアントは `api.request(newRoute, ...)` で型安全に呼び出せる
+**tRPC** — Brings its own router and middleware. Doesn't play well with `app.http()` + `InvocationContext`.
 
-## 前提環境
+**Hono RPC** — Great, but [hono-azurefunc-adapter](https://github.com/Marplex/hono-azurefunc-adapter) can't pass `InvocationContext` to handlers.
+
+**This** — ~200 lines of application code. No framework, just a pattern.
+
+## Prerequisites
 
 - Node.js 18 / 20 / 22
 - Azure Functions Core Tools v4 (`npm install -g azure-functions-core-tools@4`)

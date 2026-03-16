@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineFunction } from "../lib/typed-api.js";
+import { defineFunction } from "../lib/define-function.js";
 
 export const createTodo = defineFunction(
   {

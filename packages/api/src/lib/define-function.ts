@@ -5,11 +5,7 @@ import type {
 } from "@azure/functions";
 import { z } from "zod";
 
-// --- HTTP メソッド（決め打ち → as const 不要に） ---
-
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-
-// --- 関数定義オブジェクト ---
 
 declare const ResponseType: unique symbol;
 
@@ -44,15 +40,12 @@ export interface FunctionDefinition<
   [ResponseType]: TResponse;
 }
 
-// --- レスポンス型の抽出（三択） ---
-
+// jsonBody → inferred type, body → unknown, neither → void
 type ExtractResponse<T> = T extends { jsonBody: infer J }
   ? J
   : T extends { body: any }
     ? unknown
     : void;
-
-// --- defineFunction: ルート定義 + 関数実装を一体化（副作用なし） ---
 
 export function defineFunction<
   const TConfig extends {
@@ -80,17 +73,3 @@ export function defineFunction<
     ExtractResponse<TReturn>
   >;
 }
-
-// --- client 向け型ユーティリティ ---
-
-export type InferParams<T> = T extends FunctionDefinition<infer C, any>
-  ? z.infer<C["params"]>
-  : never;
-
-export type InferBody<T> = T extends FunctionDefinition<infer C, any>
-  ? z.infer<C["body"]>
-  : never;
-
-export type InferResponse<T> = T extends FunctionDefinition<any, infer R>
-  ? R
-  : never;
