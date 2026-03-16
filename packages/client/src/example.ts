@@ -1,7 +1,6 @@
-import { createClient } from "./api-client.js";
-import { getTodo, createTodo } from "@my-app/api";
+import { createClient } from "@my-app/api/client";
 
-const client = createClient("http://localhost:7071", { getTodo, createTodo });
+const client = createClient("http://localhost:7071");
 
 async function main() {
   // GET /api/todos/{id} — params 必須、body なし

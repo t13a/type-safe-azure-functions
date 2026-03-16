@@ -1,5 +1,4 @@
-import { registerAll } from "./typed-api.js";
-import { getTodo } from "./functions/get-todo.js";
-import { createTodo } from "./functions/create-todo.js";
+import { registerAll } from "./lib/register.js";
+import { functions } from "./functions/index.js";
 
-registerAll({ getTodo, createTodo });
+registerAll(functions);

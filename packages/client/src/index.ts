@@ -1,1 +1,1 @@
-export { createClient } from "./api-client.js";
+export { createClient } from "@my-app/api/client";

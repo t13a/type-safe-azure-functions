@@ -1,11 +1,10 @@
 import { z } from "zod";
-import { defineFunction } from "../typed-api.js";
+import { defineFunction } from "../lib/typed-api.js";
 
 export const createTodo = defineFunction(
   {
     method: "POST",
     route: "todos",
-    params: z.object({}),
     body: z.object({
       title: z.string().min(1),
       completed: z.boolean().optional().default(false),

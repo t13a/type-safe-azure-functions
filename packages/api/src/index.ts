@@ -1,8 +1,9 @@
-export { getTodo } from "./functions/get-todo.js";
-export { createTodo } from "./functions/create-todo.js";
+export { defineFunction } from "./lib/typed-api.js";
+export { registerAll } from "./lib/register.js";
 export type {
   FunctionDefinition,
+  ParsedInput,
   InferParams,
   InferBody,
   InferResponse,
-} from "./typed-api.js";
+} from "./lib/typed-api.js";

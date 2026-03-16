@@ -1,4 +1,4 @@
-import type { FunctionDefinition, InferResponse } from "@my-app/api";
+import type { FunctionDefinition, InferResponse } from "../lib/typed-api.js";
 import { z } from "zod";
 
 // --- fetch Response に型付き json() を追加 ---
@@ -22,7 +22,7 @@ type ClientMethod<T> = keyof ClientInput<T> extends never
 
 // --- 関数マップからメソッドマップを生成 ---
 
-type ApiClient<T extends Record<string, FunctionDefinition<any, any>>> = {
+export type ApiClient<T extends Record<string, FunctionDefinition<any, any>>> = {
   [K in keyof T]: ClientMethod<T[K]>;
 };
 
@@ -40,7 +40,7 @@ function buildUrl(
   return `${baseUrl}/api/${path}`;
 }
 
-// --- クライアント生成 ---
+// --- 汎用クライアント生成 ---
 
 export function createClient<
   T extends Record<string, FunctionDefinition<any, any>>,

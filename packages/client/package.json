@@ -6,8 +6,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@my-app/api": "*",
-    "zod": "^3.24"
+    "@my-app/api": "*"
   },
   "devDependencies": {
     "typescript": "^5.7"

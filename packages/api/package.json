@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./client": {
+      "types": "./dist/src/client/index.d.ts",
+      "default": "./dist/src/client/index.js"
     }
   },
   "scripts": {
