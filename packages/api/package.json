@@ -1,0 +1,32 @@
+{
+  "name": "@my-app/api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/src/app.js",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./client": {
+      "types": "./dist/src/client/index.d.ts",
+      "default": "./dist/src/client/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "client": ["./dist/src/client/index.d.ts"]
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.6",
+    "zod": "^3.24"
+  },
+  "devDependencies": {
+    "typescript": "^5.7"
+  }
+}
