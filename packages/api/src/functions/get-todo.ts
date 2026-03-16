@@ -1,12 +1,22 @@
-import { registerRoute } from "../helpers/validated-handler.js";
-import { getTodo } from "@my-app/shared";
+import { z } from "zod";
+import { defineFunction } from "../typed-api.js";
 
-registerRoute("getTodo", getTodo, async (req) => {
-  req.context.log(`Fetching todo ${req.params.id}`);
+export const getTodo = defineFunction(
+  {
+    method: "GET",
+    route: "todos/{id}",
+    params: z.object({ id: z.string().uuid() }),
+    body: z.void(),
+  },
+  async (request, context, { params }) => {
+    context.log(`Fetching todo ${params.id}`);
 
-  return {
-    id: req.params.id,
-    title: "Sample todo",
-    completed: false,
-  };
-});
+    return {
+      jsonBody: {
+        id: params.id,
+        title: "Sample todo",
+        completed: false,
+      },
+    };
+  },
+);

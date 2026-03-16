@@ -1,1 +1,1 @@
-export { createApiClient, ApiError } from "./api-client.js";
+export { createClient } from "./api-client.js";

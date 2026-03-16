@@ -1,12 +1,25 @@
-import { registerRoute } from "../helpers/validated-handler.js";
-import { createTodo } from "@my-app/shared";
+import { z } from "zod";
+import { defineFunction } from "../typed-api.js";
 
-registerRoute("createTodo", createTodo, async (req) => {
-  req.context.log(`Creating todo: ${req.body.title}`);
+export const createTodo = defineFunction(
+  {
+    method: "POST",
+    route: "todos",
+    params: z.object({}),
+    body: z.object({
+      title: z.string().min(1),
+      completed: z.boolean().optional().default(false),
+    }),
+  },
+  async (request, context, { body }) => {
+    context.log(`Creating todo: ${body.title}`);
 
-  return {
-    id: crypto.randomUUID(),
-    title: req.body.title,
-    completed: req.body.completed,
-  };
-});
+    return {
+      jsonBody: {
+        id: crypto.randomUUID(),
+        title: body.title,
+        completed: body.completed,
+      },
+    };
+  },
+);

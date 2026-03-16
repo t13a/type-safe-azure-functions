@@ -1,27 +1,32 @@
-import type {
-  RouteDefinition,
-  InferParams,
-  InferBody,
-  InferResponse,
-} from "@my-app/shared";
+import type { FunctionDefinition, InferResponse } from "@my-app/api";
+import { z } from "zod";
 
-type HasParams<R> =
-  InferParams<R> extends Record<string, never> ? false : true;
-type HasBody<R> =
-  R extends RouteDefinition<infer M, any, any, any, any>
-    ? M extends "POST" | "PUT" | "PATCH"
-      ? true
-      : false
-    : false;
+// --- fetch Response に型付き json() を追加 ---
 
-type RequestArgs<R> =
-  HasParams<R> extends true
-    ? HasBody<R> extends true
-      ? [params: InferParams<R>, body: InferBody<R>]
-      : [params: InferParams<R>]
-    : HasBody<R> extends true
-      ? [params: InferParams<R>, body: InferBody<R>]
-      : [params?: InferParams<R>];
+interface TypedResponse<T> extends Response {
+  json(): Promise<T>;
+}
+
+// --- params/body の有無に応じた入力型を構築 ---
+
+type ClientInput<T> = T extends FunctionDefinition<infer C, any>
+  ? (z.infer<C["params"]> extends Record<string, never>
+      ? {}
+      : { params: z.infer<C["params"]> }) &
+      (C["body"] extends z.ZodVoid ? {} : { body: z.input<C["body"]> })
+  : never;
+
+type ClientMethod<T> = keyof ClientInput<T> extends never
+  ? () => Promise<TypedResponse<InferResponse<T>>>
+  : (input: ClientInput<T>) => Promise<TypedResponse<InferResponse<T>>>;
+
+// --- 関数マップからメソッドマップを生成 ---
+
+type ApiClient<T extends Record<string, FunctionDefinition<any, any>>> = {
+  [K in keyof T]: ClientMethod<T[K]>;
+};
+
+// --- URL 構築 ---
 
 function buildUrl(
   baseUrl: string,
@@ -35,36 +40,25 @@ function buildUrl(
   return `${baseUrl}/api/${path}`;
 }
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public body: unknown,
-  ) {
-    super(`API error ${status}`);
-  }
-}
+// --- クライアント生成 ---
 
-export function createApiClient(baseUrl: string) {
-  async function request<R extends RouteDefinition<any, any, any, any, any>>(
-    route: R,
-    ...args: RequestArgs<R>
-  ): Promise<InferResponse<R>> {
-    const [params, body] = args as [Record<string, string>?, unknown?];
-    const url = buildUrl(baseUrl, route.route, params ?? {});
+export function createClient<
+  T extends Record<string, FunctionDefinition<any, any>>,
+>(baseUrl: string, functions: T): ApiClient<T> {
+  const client = {} as Record<string, (input?: any) => Promise<Response>>;
 
-    const res = await fetch(url, {
-      method: route.method,
-      headers: body !== undefined ? { "Content-Type": "application/json" } : {},
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+  for (const [name, def] of Object.entries(functions)) {
+    client[name] = async (input?: { params?: Record<string, string>; body?: unknown }) => {
+      const url = buildUrl(baseUrl, def.config.route, input?.params ?? {});
+      const body = input?.body;
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, err);
-    }
-
-    return (await res.json()) as InferResponse<R>;
+      return fetch(url, {
+        method: def.config.method,
+        headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    };
   }
 
-  return { request };
+  return client as ApiClient<T>;
 }

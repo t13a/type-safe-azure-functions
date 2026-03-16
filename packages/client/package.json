@@ -6,7 +6,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@my-app/shared": "*",
+    "@my-app/api": "*",
     "zod": "^3.24"
   },
   "devDependencies": {
