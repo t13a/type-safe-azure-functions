@@ -40,7 +40,6 @@ export interface FunctionDefinition<
   [ResponseType]: TResponse;
 }
 
-// jsonBody → inferred type, body → unknown, neither → void
 type ExtractResponse<T> = T extends { jsonBody: infer J }
   ? J
   : T extends { body: any }

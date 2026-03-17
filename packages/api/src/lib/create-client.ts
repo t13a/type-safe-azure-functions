@@ -1,4 +1,4 @@
-import type { FunctionDefinition } from "../lib/define-function.js";
+import type { FunctionDefinition } from "./define-function.js";
 import { z } from "zod";
 
 type InferResponse<T> = T extends FunctionDefinition<any, infer R> ? R : never;
@@ -18,7 +18,7 @@ type ClientMethod<T> = keyof ClientInput<T> extends never
   ? () => Promise<TypedResponse<InferResponse<T>>>
   : (input: ClientInput<T>) => Promise<TypedResponse<InferResponse<T>>>;
 
-type ApiClient<T extends Record<string, FunctionDefinition<any, any>>> = {
+type Client<T extends Record<string, FunctionDefinition<any, any>>> = {
   [K in keyof T]: ClientMethod<T[K]>;
 };
 
@@ -36,7 +36,7 @@ function buildUrl(
 
 export function createClient<
   T extends Record<string, FunctionDefinition<any, any>>,
->(baseUrl: string, functions: T): ApiClient<T> {
+>(baseUrl: string, functions: T): Client<T> {
   const client = {} as Record<string, (input?: any) => Promise<Response>>;
 
   for (const [name, def] of Object.entries(functions)) {
@@ -52,5 +52,5 @@ export function createClient<
     };
   }
 
-  return client as ApiClient<T>;
+  return client as Client<T>;
 }

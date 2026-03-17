@@ -9,7 +9,7 @@ Type-safe API communication for Azure Functions v4, inspired by Hono RPC. Respon
 ```
 defineFunction()          →  Route + handler in one place (no side effects)
   ↓
-registerAll()             →  Registers with app.http() at startup
+registerFunction()        →  Registers with app.http() at startup
   ↓
 createClient(baseUrl)     →  Typed client, response types flow automatically
 ```
@@ -24,16 +24,14 @@ packages/
 │   ├── src/
 │   │   ├── lib/
 │   │   │   ├── define-function.ts   # defineFunction + types (no @azure/functions runtime dep)
-│   │   │   └── register.ts         # registerAll (calls app.http())
+│   │   │   ├── register-function.ts # registerFunction (calls app.http())
+│   │   │   └── create-client.ts    # Generic typed client
 │   │   ├── functions/
 │   │   │   ├── index.ts            # Function map (shared by server and client)
 │   │   │   ├── get-todo.ts
 │   │   │   └── create-todo.ts
-│   │   ├── client/
-│   │   │   ├── index.ts            # Pre-configured client factory
-│   │   │   └── create-client.ts    # Generic typed client
 │   │   ├── app.ts                  # Azure Functions entry point
-│   │   └── index.ts                # Server-side barrel export
+│   │   └── index.ts                # createClient (pre-configured with functions)
 │   └── package.json
 └── client/                         # Usage example
     └── src/
@@ -87,10 +85,12 @@ The handler signature extends the standard Azure Functions convention — `reque
 Side effects are isolated to `app.ts`, the Azure Functions entry point:
 
 ```typescript
-import { registerAll } from "./lib/register.js";
+import { registerFunction } from "./lib/register-function.js";
 import { functions } from "./functions/index.js";
 
-registerAll(functions);
+for (const [name, def] of Object.entries(functions)) {
+  registerFunction(name, def);
+}
 ```
 
 The function map in `functions/index.ts` is shared between server registration and the client.
@@ -98,7 +98,7 @@ The function map in `functions/index.ts` is shared between server registration a
 ## Client usage
 
 ```typescript
-import { createClient } from "@my-app/api/client";
+import { createClient } from "@my-app/api";
 
 const client = createClient("http://localhost:7071");
 

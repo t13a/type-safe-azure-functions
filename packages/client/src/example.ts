@@ -1,4 +1,4 @@
-import { createClient } from "@my-app/api/client";
+import { createClient } from "@my-app/api";
 
 const client = createClient("http://localhost:7071");
 
