@@ -1,11 +1,16 @@
 import type { FunctionDefinition } from "./define-function.js";
+import type { badRequest, internalServerError } from "./register-function.js";
 import { z } from "zod";
 
 type InferResponse<T> = T extends FunctionDefinition<any, infer R> ? R : never;
 
-export interface TypedResponse<T> extends Response {
-  json(): Promise<T>;
-}
+type ErrorResponse<F extends (...args: never[]) => { status: number; jsonBody: unknown }> =
+  Response & { ok: false; status: ReturnType<F>["status"]; json(): Promise<ReturnType<F>["jsonBody"]> };
+
+export type TypedResponse<T> =
+  | (Response & { ok: true; json(): Promise<T> })
+  | ErrorResponse<typeof badRequest>
+  | ErrorResponse<typeof internalServerError>;
 
 type NeedsMethod<C> = C extends { methods: [any] }
   ? {}

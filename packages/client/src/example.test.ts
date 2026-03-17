@@ -22,4 +22,22 @@ describe("todo API", () => {
     expect(todo.title).toBe("Buy milk");
     expect(todo.completed).toBe(false);
   });
+
+  it("returns 400 for invalid params", async () => {
+    const res = await client.getTodo({ params: { id: "not-a-uuid" } });
+    expect(res.status).toBe(400);
+    if (res.status === 400) {
+      const err = await res.json();
+      expect(err.errors).toBeDefined();
+    }
+  });
+
+  it("returns 400 for invalid body", async () => {
+    const res = await client.createTodo({ body: { title: "" } });
+    expect(res.status).toBe(400);
+    if (res.status === 400) {
+      const err = await res.json();
+      expect(err.errors).toBeDefined();
+    }
+  });
 });

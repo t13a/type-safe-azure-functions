@@ -7,6 +7,14 @@ import {
 import { z } from "zod";
 import type { FunctionDefinition } from "./define-function.js";
 
+export function badRequest(err: z.ZodError) {
+  return { status: 400 as const, jsonBody: { errors: err.flatten() } };
+}
+
+export function internalServerError() {
+  return { status: 500 as const, jsonBody: { error: "Internal server error" } };
+}
+
 export function registerFunction(
   name: string, def: FunctionDefinition<any, any>
 ): void {
@@ -32,10 +40,10 @@ export function registerFunction(
         return await def.handler(request, context, { params, body });
       } catch (err) {
         if (err instanceof z.ZodError) {
-          return { status: 400, jsonBody: { errors: err.flatten() } };
+          return badRequest(err);
         }
         context.error("Unhandled error", err);
-        return { status: 500, jsonBody: { error: "Internal server error" } };
+        return internalServerError();
       }
     },
   });
