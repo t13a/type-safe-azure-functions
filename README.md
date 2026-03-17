@@ -46,6 +46,19 @@ npx tsc --build
 cd packages/api && func start
 ```
 
+## Running tests
+
+Tests run against a live Azure Functions instance. Start the server first, then run:
+
+```bash
+# terminal 1
+npx tsc --build
+cd packages/api && func start
+
+# terminal 2
+cd packages/client && npm test
+```
+
 ## Defining functions
 
 Use `defineFunction()` to declare a route and its handler together. No `as const`, no separate route definitions, no response schemas.
