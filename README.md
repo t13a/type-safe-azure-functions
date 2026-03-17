@@ -1,4 +1,4 @@
-# azure-functions-hands-on
+# Type-safe Azure Functions
 
 > If you can use [Hono](https://hono.dev/docs/guides/rpc), use Hono. This exists because some of us are not that fortunate.
 
