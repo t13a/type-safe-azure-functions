@@ -1,4 +1,6 @@
-import { registerAll } from "./lib/register.js";
+import { registerFunction } from "./lib/register-function.js";
 import { functions } from "./functions/index.js";
 
-registerAll(functions);
+for (const [name, def] of Object.entries(functions)) {
+  registerFunction(name, def)
+}

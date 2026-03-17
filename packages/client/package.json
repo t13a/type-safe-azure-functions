@@ -2,13 +2,14 @@
   "name": "@my-app/client",
   "version": "1.0.0",
   "private": true,
-  "exports": {
-    ".": "./src/index.ts"
+  "scripts": {
+    "test": "vitest run"
   },
   "dependencies": {
     "@my-app/api": "*"
   },
   "devDependencies": {
-    "typescript": "^5.7"
+    "typescript": "^5.7",
+    "vitest": "^3.0"
   }
 }
