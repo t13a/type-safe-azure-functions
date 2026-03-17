@@ -38,11 +38,15 @@ export interface FunctionDefinition<
   [ResponseType]: TResponse;
 }
 
-type ExtractResponse<T> = T extends { jsonBody: infer J }
+type ExtractStatus<T> = T extends { status: infer S extends number } ? S : 200;
+
+type ExtractBody<T> = T extends { jsonBody: infer J }
   ? J
   : T extends { body: any }
     ? unknown
     : void;
+
+type ExtractResponse<T> = { status: ExtractStatus<T>; body: ExtractBody<T> };
 
 export function defineFunction<
   const TOptions extends Omit<HttpFunctionOptions, "handler"> & {

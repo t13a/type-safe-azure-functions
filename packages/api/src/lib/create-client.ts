@@ -2,13 +2,14 @@ import type { FunctionDefinition } from "./define-function.js";
 import type { badRequest, internalServerError } from "./register-function.js";
 import { z } from "zod";
 
-type InferResponse<T> = T extends FunctionDefinition<any, infer R> ? R : never;
+type InferStatus<T> = T extends FunctionDefinition<any, { status: infer S extends number; body: any }> ? S : never;
+type InferBody<T> = T extends FunctionDefinition<any, { status: any; body: infer B }> ? B : never;
 
 type ErrorResponse<F extends (...args: never[]) => { status: number; jsonBody: unknown }> =
-  Response & { ok: false; status: ReturnType<F>["status"]; json(): Promise<ReturnType<F>["jsonBody"]> };
+  Omit<Response, "json"> & { status: ReturnType<F>["status"]; json(): Promise<ReturnType<F>["jsonBody"]> };
 
-export type TypedResponse<T> =
-  | (Response & { ok: true; json(): Promise<T> })
+export type TypedResponse<TStatus extends number, TBody> =
+  | (Omit<Response, "json"> & { status: TStatus; json(): Promise<TBody> })
   | ErrorResponse<typeof badRequest>
   | ErrorResponse<typeof internalServerError>;
 
@@ -27,8 +28,8 @@ type ClientInput<T> = T extends FunctionDefinition<infer C, any>
   : never;
 
 type ClientMethod<T> = keyof ClientInput<T> extends never
-  ? () => Promise<TypedResponse<InferResponse<T>>>
-  : (input: ClientInput<T>) => Promise<TypedResponse<InferResponse<T>>>;
+  ? () => Promise<TypedResponse<InferStatus<T>, InferBody<T>>>
+  : (input: ClientInput<T>) => Promise<TypedResponse<InferStatus<T>, InferBody<T>>>;
 
 type Client<T extends Record<string, FunctionDefinition<any, any>>> = {
   [K in keyof T]: ClientMethod<T[K]>;

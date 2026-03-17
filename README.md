@@ -33,9 +33,9 @@ packages/
 │   │   ├── app.ts                  # Azure Functions entry point
 │   │   └── index.ts                # createClient (pre-configured with functions)
 │   └── package.json
-└── client/                         # Usage example
+└── client/                         # Usage example / integration tests
     └── src/
-        └── example.ts
+        └── example.test.ts
 ```
 
 ## Quick start
@@ -116,17 +116,21 @@ import { createClient } from "@my-app/api";
 
 const client = createClient("http://localhost:7071");
 
+// Status code narrows the json() return type
 const res = await client.getTodo({ params: { id: "550e8400-..." } });
-if (res.ok) {
+if (res.status === 200) {
   const todo = await res.json();
   // todo: { id: string; title: string; completed: boolean }
+} else if (res.status === 400) {
+  const err = await res.json();
+  // err: { errors: ZodError.flatten() result }
+} else {
+  const err = await res.json();
+  // err: { error: string }
 }
-
-const res2 = await client.createTodo({ body: { title: "Buy milk" } });
-const newTodo = await res2.json();
 ```
 
-The client returns a standard `Response` with a typed `json()` method. Check `res.ok` yourself — no magic error throwing.
+The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Validation errors (400) and unhandled exceptions (500) have fixed response shapes derived from the server implementation.
 
 When `methods` has a single element, the HTTP method is used automatically. When multiple methods are specified, a `method` field is required in the client call:
 
@@ -143,13 +147,14 @@ const res = await client.getTodo({ method: "GET", params: { id: "550e8400-..." }
 
 ## Response type inference
 
-The response type is inferred from what you return:
+The response type is inferred from what you return. The status code defaults to `200` when omitted:
 
-| Return shape | Inferred client type |
-|---|---|
-| `{ jsonBody: { id: string } }` | `{ id: string }` |
-| `{ body: "raw string" }` | `unknown` |
-| `{ status: 204 }` | `void` |
+| Return shape | Inferred status | Inferred body |
+|---|---|---|
+| `{ jsonBody: { id: string } }` | `200` | `{ id: string }` |
+| `{ status: 201 as const, jsonBody: { id: string } }` | `201` | `{ id: string }` |
+| `{ body: "raw string" }` | `200` | `unknown` |
+| `{ status: 204 as const }` | `204` | `void` |
 
 ## Why not X?
 
