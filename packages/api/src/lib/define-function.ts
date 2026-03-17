@@ -11,12 +11,7 @@ declare const ResponseType: unique symbol;
 
 type DefaultParams = z.ZodObject<{}, "strip", z.ZodTypeAny>;
 
-type ParseConfig = {
-  params?: z.ZodTypeAny;
-  body?: z.ZodTypeAny;
-};
-
-type NormalizeParse<T> = {
+type ParseConfig<T> = {
   params: T extends { params: infer P extends z.ZodTypeAny } ? P : DefaultParams;
   body: T extends { body: infer B extends z.ZodTypeAny } ? B : z.ZodVoid;
 };
@@ -35,7 +30,7 @@ export interface FunctionDefinition<
   TResponse,
 > {
   config: TConfig;
-  fn: (
+  handler: (
     request: HttpRequest,
     context: InvocationContext,
     parsed: ParsedInput<TConfig["parse"]>,
@@ -54,7 +49,7 @@ export function defineFunction<
     methods: HttpMethod[];
     route: string;
   },
-  const TParse extends ParseConfig = {},
+  const TParse extends { params?: z.ZodTypeAny; body?: z.ZodTypeAny } = {},
   TReturn extends HttpResponseInit = HttpResponseInit,
 >(
   options: TOptions & {
@@ -65,17 +60,17 @@ export function defineFunction<
       parsed: ParsedInput<TParse>,
     ) => Promise<TReturn>;
   },
-): FunctionDefinition<TOptions & { parse: NormalizeParse<TParse> }, ExtractResponse<TReturn>> {
+): FunctionDefinition<TOptions & { parse: ParseConfig<TParse> }, ExtractResponse<TReturn>> {
   const { handler, parse, ...rest } = options as any;
-  const resolved = {
+  const config = {
     ...rest,
     parse: {
       params: parse?.params ?? z.object({}),
       body: parse?.body ?? z.void(),
     },
   };
-  return { config: resolved, fn: handler } as unknown as FunctionDefinition<
-    TOptions & { parse: NormalizeParse<TParse> },
+  return { config, handler } as FunctionDefinition<
+    TOptions & { parse: ParseConfig<TParse> },
     ExtractResponse<TReturn>
   >;
 }

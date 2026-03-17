@@ -29,7 +29,7 @@ export function registerFunction(
           body = parse.body.parse(raw);
         }
 
-        return await def.fn(request, context, { params, body });
+        return await def.handler(request, context, { params, body });
       } catch (err) {
         if (err instanceof z.ZodError) {
           return { status: 400, jsonBody: { errors: err.flatten() } };
