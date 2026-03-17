@@ -1,16 +1,17 @@
 import { z } from "zod";
 import { defineFunction } from "../lib/define-function.js";
 
-export const createTodo = defineFunction(
-  {
-    method: "POST",
-    route: "todos",
+export const createTodo = defineFunction({
+  methods: ["POST"],
+  route: "todos",
+  authLevel: "anonymous",
+  parse: {
     body: z.object({
       title: z.string().min(1),
       completed: z.boolean().optional().default(false),
     }),
   },
-  async (request, context, { body }) => {
+  handler: async (request, context, { body }) => {
     context.log(`Creating todo: ${body.title}`);
 
     return {
@@ -21,4 +22,4 @@ export const createTodo = defineFunction(
       },
     };
   },
-);
+});

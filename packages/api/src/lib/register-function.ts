@@ -10,23 +10,23 @@ import type { FunctionDefinition } from "./define-function.js";
 export function registerFunction(
   name: string, def: FunctionDefinition<any, any>
 ): void {
+  const { parse, ...httpOptions } = def.config;
+
   app.http(name, {
-    methods: [def.config.method],
-    authLevel: "anonymous",
-    route: def.config.route,
+    ...httpOptions,
     handler: async (
       request: HttpRequest,
       context: InvocationContext,
     ): Promise<HttpResponseInit> => {
       try {
-        const params = def.config.params.parse(
+        const params = parse.params.parse(
           Object.fromEntries(Object.entries(request.params)),
         );
 
         let body: unknown = undefined;
-        if (!(def.config.body instanceof z.ZodVoid)) {
+        if (!(parse.body instanceof z.ZodVoid)) {
           const raw = await request.json();
-          body = def.config.body.parse(raw);
+          body = parse.body.parse(raw);
         }
 
         return await def.fn(request, context, { params, body });

@@ -1,41 +1,44 @@
-import type {
-  HttpRequest,
-  HttpResponseInit,
-  InvocationContext,
+import {
+  type HttpFunctionOptions,
+  type HttpMethod,
+  type HttpRequest,
+  type HttpResponseInit,
+  type InvocationContext,
 } from "@azure/functions";
 import { z } from "zod";
-
-type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 declare const ResponseType: unique symbol;
 
 type DefaultParams = z.ZodObject<{}, "strip", z.ZodTypeAny>;
 
-type WithDefaults<T> = {
-  method: T extends { method: infer M extends HttpMethod } ? M : never;
-  route: T extends { route: infer R extends string } ? R : never;
-  params: T extends { params: infer P extends z.ZodTypeAny }
-    ? P
-    : DefaultParams;
+type ParseConfig = {
+  params?: z.ZodTypeAny;
+  body?: z.ZodTypeAny;
+};
+
+type NormalizeParse<T> = {
+  params: T extends { params: infer P extends z.ZodTypeAny } ? P : DefaultParams;
   body: T extends { body: infer B extends z.ZodTypeAny } ? B : z.ZodVoid;
 };
 
-export type ParsedInput<C> = {
-  params: C extends { params: infer P extends z.ZodTypeAny }
-    ? z.infer<P>
-    : Record<string, never>;
-  body: C extends { body: infer B extends z.ZodTypeAny } ? z.infer<B> : void;
+export type ParsedInput<T> = {
+  params: T extends { params: infer P extends z.ZodTypeAny } ? z.infer<P> : Record<string, never>;
+  body: T extends { body: infer B extends z.ZodTypeAny } ? z.infer<B> : void;
 };
 
 export interface FunctionDefinition<
-  TConfig extends { method: HttpMethod; route: string; params: z.ZodTypeAny; body: z.ZodTypeAny },
+  TConfig extends {
+    methods: HttpMethod[];
+    route: string;
+    parse: { params: z.ZodTypeAny; body: z.ZodTypeAny };
+  },
   TResponse,
 > {
   config: TConfig;
   fn: (
     request: HttpRequest,
     context: InvocationContext,
-    parsed: ParsedInput<TConfig>,
+    parsed: ParsedInput<TConfig["parse"]>,
   ) => Promise<HttpResponseInit>;
   [ResponseType]: TResponse;
 }
@@ -47,28 +50,32 @@ type ExtractResponse<T> = T extends { jsonBody: infer J }
     : void;
 
 export function defineFunction<
-  const TConfig extends {
-    method: HttpMethod;
+  const TOptions extends Omit<HttpFunctionOptions, "handler"> & {
+    methods: HttpMethod[];
     route: string;
-    params?: z.ZodTypeAny;
-    body?: z.ZodTypeAny;
   },
-  TReturn extends HttpResponseInit,
+  const TParse extends ParseConfig = {},
+  TReturn extends HttpResponseInit = HttpResponseInit,
 >(
-  config: TConfig,
-  fn: (
-    request: HttpRequest,
-    context: InvocationContext,
-    parsed: ParsedInput<WithDefaults<TConfig>>,
-  ) => Promise<TReturn>,
-): FunctionDefinition<WithDefaults<TConfig>, ExtractResponse<TReturn>> {
+  options: TOptions & {
+    parse?: TParse;
+    handler: (
+      request: HttpRequest,
+      context: InvocationContext,
+      parsed: ParsedInput<TParse>,
+    ) => Promise<TReturn>;
+  },
+): FunctionDefinition<TOptions & { parse: NormalizeParse<TParse> }, ExtractResponse<TReturn>> {
+  const { handler, parse, ...rest } = options as any;
   const resolved = {
-    ...config,
-    params: config.params ?? z.object({}),
-    body: config.body ?? z.void(),
+    ...rest,
+    parse: {
+      params: parse?.params ?? z.object({}),
+      body: parse?.body ?? z.void(),
+    },
   };
-  return { config: resolved, fn } as unknown as FunctionDefinition<
-    WithDefaults<TConfig>,
+  return { config: resolved, fn: handler } as unknown as FunctionDefinition<
+    TOptions & { parse: NormalizeParse<TParse> },
     ExtractResponse<TReturn>
   >;
 }

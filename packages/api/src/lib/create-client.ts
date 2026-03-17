@@ -7,11 +7,18 @@ export interface TypedResponse<T> extends Response {
   json(): Promise<T>;
 }
 
+type NeedsMethod<C> = C extends { methods: [any] }
+  ? {}
+  : { method: C extends { methods: ReadonlyArray<infer M> } ? M : string };
+
 type ClientInput<T> = T extends FunctionDefinition<infer C, any>
-  ? (z.infer<C["params"]> extends Record<string, never>
-      ? {}
-      : { params: z.infer<C["params"]> }) &
-      (C["body"] extends z.ZodVoid ? {} : { body: z.input<C["body"]> })
+  ? NeedsMethod<C> &
+      (z.infer<C["parse"]["params"]> extends Record<string, never>
+        ? {}
+        : { params: z.infer<C["parse"]["params"]> }) &
+      (C["parse"]["body"] extends z.ZodVoid
+        ? {}
+        : { body: z.input<C["parse"]["body"]> })
   : never;
 
 type ClientMethod<T> = keyof ClientInput<T> extends never
@@ -40,12 +47,13 @@ export function createClient<
   const client = {} as Record<string, (input?: any) => Promise<Response>>;
 
   for (const [name, def] of Object.entries(functions)) {
-    client[name] = async (input?: { params?: Record<string, string>; body?: unknown }) => {
+    client[name] = async (input?: { method?: string; params?: Record<string, string>; body?: unknown }) => {
       const url = buildUrl(baseUrl, def.config.route, input?.params ?? {});
       const body = input?.body;
+      const method = input?.method ?? def.config.methods[0];
 
       return fetch(url, {
-        method: def.config.method,
+        method,
         headers: body !== undefined ? { "Content-Type": "application/json" } : {},
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });

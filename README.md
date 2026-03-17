@@ -54,17 +54,18 @@ Use `defineFunction()` to declare a route and its handler together. No `as const
 import { z } from "zod";
 import { defineFunction } from "../lib/define-function.js";
 
-export const createTodo = defineFunction(
-  {
-    method: "POST",
-    route: "todos",
+export const createTodo = defineFunction({
+  methods: ["POST"],
+  route: "todos",
+  authLevel: "anonymous",
+  parse: {
     body: z.object({
       title: z.string().min(1),
       completed: z.boolean().optional().default(false),
     }),
-    // params and body are optional — omit when not needed
+    // parse.params and parse.body are optional — omit when not needed
   },
-  async (request, context, { body }) => {
+  handler: async (request, context, { body }) => {
     context.log(`Creating todo: ${body.title}`);
 
     return {
@@ -75,10 +76,10 @@ export const createTodo = defineFunction(
       },
     };
   },
-);
+});
 ```
 
-The handler signature extends the standard Azure Functions convention — `request` and `context` come first, with a single `parsed` argument added for validated input.
+The options object extends `HttpFunctionOptions` from `@azure/functions` — all Azure Functions HTTP options (`authLevel`, `methods`, `route`, `retry`, etc.) are available as-is. A `parse` sub-object is added for Zod validation schemas, and `handler` receives a `parsed` argument with the validated values.
 
 ## Registering functions
 
@@ -113,6 +114,13 @@ const newTodo = await res2.json();
 ```
 
 The client returns a standard `Response` with a typed `json()` method. Check `res.ok` yourself — no magic error throwing.
+
+When `methods` has a single element, the HTTP method is used automatically. When multiple methods are specified, a `method` field is required in the client call:
+
+```typescript
+// methods: ["GET", "HEAD"] → method is required
+const res = await client.getTodo({ method: "GET", params: { id: "550e8400-..." } });
+```
 
 ## Adding a new endpoint
 
