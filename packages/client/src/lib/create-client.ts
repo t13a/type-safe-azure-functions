@@ -1,4 +1,4 @@
-import type { FunctionDefinition } from "@my-app/api";
+import type { FunctionDefinition, badRequest, internalServerError } from "@my-app/api";
 import type { z } from "zod";
 
 type InferStatus<T> =
@@ -8,14 +8,8 @@ type InferBody<T> =
 
 type TypedResponse<TStatus extends number, TBody> =
   | (Omit<Response, "json"> & { status: TStatus; json(): Promise<TBody> })
-  | (Omit<Response, "json"> & {
-      status: 400;
-      json(): Promise<{ errors: { formErrors: string[]; fieldErrors: Record<string, string[] | undefined> } }>;
-    })
-  | (Omit<Response, "json"> & {
-      status: 500;
-      json(): Promise<{ error: string }>;
-    });
+  | (Omit<Response, "json"> & { status: 400; json(): Promise<ReturnType<typeof badRequest>["jsonBody"]> })
+  | (Omit<Response, "json"> & { status: 500; json(): Promise<ReturnType<typeof internalServerError>["jsonBody"]> });
 
 type ClientMethod<T> = T extends FunctionDefinition<
   infer C extends { parse: { body: z.ZodTypeAny } },

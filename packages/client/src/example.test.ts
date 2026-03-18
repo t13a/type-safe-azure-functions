@@ -1,5 +1,5 @@
 import type { functions } from "@my-app/api";
-import { createClient } from "./create-client.js";
+import { createClient } from "./lib/create-client.js";
 import { describe, expect, it } from "vitest";
 
 const client = createClient<typeof functions>("http://localhost:7071");
