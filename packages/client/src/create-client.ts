@@ -22,11 +22,8 @@ type ClientMethod<T> = T extends FunctionDefinition<
   any
 >
   ? C["parse"]["body"] extends z.ZodVoid
-    ? (input?: { headers?: HeadersInit }) => Promise<TypedResponse<InferStatus<T>, InferBody<T>>>
-    : (input: {
-        body: z.input<C["parse"]["body"]>;
-        headers?: HeadersInit;
-      }) => Promise<TypedResponse<InferStatus<T>, InferBody<T>>>
+    ? () => Promise<TypedResponse<InferStatus<T>, InferBody<T>>>
+    : (input: { body: z.input<C["parse"]["body"]> }) => Promise<TypedResponse<InferStatus<T>, InferBody<T>>>
   : never;
 
 type Client<T extends Record<string, FunctionDefinition<any, any>>> = {
@@ -39,12 +36,10 @@ export function createClient<
   return new Proxy({} as Client<T>, {
     get(_, prop: string | symbol) {
       if (typeof prop !== "string") return undefined;
-      return async (input?: { body?: unknown; headers?: HeadersInit }) => {
-        const mergedHeaders = new Headers(input?.headers);
-        mergedHeaders.set("Content-Type", "application/json");
+      return async (input?: { body?: unknown }) => {
         return fetch(`${baseUrl}/api/${prop}`, {
           method: "POST",
-          headers: mergedHeaders,
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(input?.body ?? {}),
         });
       };

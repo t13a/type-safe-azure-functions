@@ -7,7 +7,7 @@ Type-safe API communication for Azure Functions v4, inspired by Hono RPC. Respon
 ## How it works
 
 ```
-defineFunction()          →  Route + handler in one place (no side effects)
+defineFunction()          →  Handler + validation in one place (no side effects)
   ↓
 registerFunction()        →  Registers with app.http() at startup
   ↓
@@ -15,6 +15,18 @@ createClient(baseUrl)     →  Typed client, response types flow automatically
 ```
 
 Change the handler's return value and TypeScript will flag mismatches on both server and client. No code generation required.
+
+## Design constraints
+
+This library trades full Azure Functions compatibility for simplicity. The following conventions are fixed and cannot be overridden:
+
+| Constraint | Value |
+|---|---|
+| HTTP method | Always `POST` |
+| Route | `/api/{functionName}` (function name as-is) |
+| Request format | JSON body only (no URL path/query params) |
+
+`methods` and `route` are excluded from `defineFunction` options — specifying them is a compile error. If you need custom routing or other HTTP methods, use `app.http()` directly.
 
 ## Project structure
 
@@ -24,17 +36,17 @@ packages/
 │   ├── src/
 │   │   ├── lib/
 │   │   │   ├── define-function.ts   # defineFunction + types (no @azure/functions runtime dep)
-│   │   │   ├── register-function.ts # registerFunction (calls app.http())
-│   │   │   └── create-client.ts    # Generic typed client
+│   │   │   └── register-function.ts # registerFunction (calls app.http())
 │   │   ├── functions/
 │   │   │   ├── index.ts            # Function map (shared by server and client)
 │   │   │   ├── get-todo.ts
 │   │   │   └── create-todo.ts
 │   │   ├── app.ts                  # Azure Functions entry point
-│   │   └── index.ts                # createClient (pre-configured with functions)
+│   │   └── index.ts                # Re-exports FunctionDefinition, functions map
 │   └── package.json
 └── client/                         # Usage example / integration tests
     └── src/
+        ├── create-client.ts        # createClient (generic typed fetch wrapper)
         └── example.test.ts
 ```
 
@@ -61,22 +73,20 @@ cd packages/client && npm test
 
 ## Defining functions
 
-Use `defineFunction()` to declare a route and its handler together. No `as const`, no separate route definitions, no response schemas.
+Use `defineFunction()` to declare a handler with its validation schema. The function name used in `functions/index.ts` becomes both the Azure Functions name and the client method name.
 
 ```typescript
 import { z } from "zod";
 import { defineFunction } from "../lib/define-function.js";
 
 export const createTodo = defineFunction({
-  methods: ["POST"],
-  route: "todos",
   authLevel: "anonymous",
   parse: {
     body: z.object({
       title: z.string().min(1),
       completed: z.boolean().optional().default(false),
     }),
-    // parse.params and parse.body are optional — omit when not needed
+    // parse.body is optional — omit for endpoints that take no input
   },
   handler: async (request, context, { body }) => {
     context.log(`Creating todo: ${body.title}`);
@@ -92,7 +102,7 @@ export const createTodo = defineFunction({
 });
 ```
 
-The options object extends `HttpFunctionOptions` from `@azure/functions` — all Azure Functions HTTP options (`authLevel`, `methods`, `route`, `retry`, etc.) are available as-is. A `parse` sub-object is added for Zod validation schemas, and `handler` receives a `parsed` argument with the validated values.
+The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler` — those are controlled by the framework. `authLevel`, `retry`, and other options work as-is.
 
 ## Registering functions
 
@@ -111,13 +121,16 @@ The function map in `functions/index.ts` is shared between server registration a
 
 ## Client usage
 
-```typescript
-import { createClient } from "@my-app/api";
+The client package takes `@my-app/api` as a `devDependency` — only type information is imported, with no runtime dependency on the Azure Functions SDK.
 
-const client = createClient("http://localhost:7071");
+```typescript
+import type { functions } from "@my-app/api";
+import { createClient } from "./create-client.js";
+
+const client = createClient<typeof functions>("http://localhost:7071");
 
 // Status code narrows the json() return type
-const res = await client.getTodo({ params: { id: "550e8400-..." } });
+const res = await client.getTodo({ body: { id: "550e8400-..." } });
 if (res.status === 200) {
   const todo = await res.json();
   // todo: { id: string; title: string; completed: boolean }
@@ -131,13 +144,6 @@ if (res.status === 200) {
 ```
 
 The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Validation errors (400) and unhandled exceptions (500) have fixed response shapes derived from the server implementation.
-
-When `methods` has a single element, the HTTP method is used automatically. When multiple methods are specified, a `method` field is required in the client call:
-
-```typescript
-// methods: ["GET", "HEAD"] → method is required
-const res = await client.getTodo({ method: "GET", params: { id: "550e8400-..." } });
-```
 
 ## Adding a new endpoint
 
