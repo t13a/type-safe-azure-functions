@@ -42,7 +42,7 @@ type ExtractBody<T> = T extends { jsonBody: infer J }
 type ExtractResponse<T> = { status: ExtractStatus<T>; body: ExtractBody<T> };
 
 export function defineFunction<
-  const TOptions extends Omit<HttpFunctionOptions, "handler">,
+  const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,
   const TParse extends { body?: z.ZodTypeAny } = {},
   TReturn extends HttpResponseInit = HttpResponseInit,
 >(
