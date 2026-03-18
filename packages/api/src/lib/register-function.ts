@@ -22,19 +22,20 @@ export function registerFunction(
 
   app.http(name, {
     ...httpOptions,
+    methods: ["POST"],
+    route: name,
     handler: async (
       request: HttpRequest,
       context: InvocationContext,
     ): Promise<HttpResponseInit> => {
       try {
-        const params = parse.params.parse(
-          Object.fromEntries(Object.entries(request.params)),
-        );
+        const raw = (await request.json()) as { params?: unknown; body?: unknown };
+
+        const params = parse.params.parse(raw.params ?? {});
 
         let body: unknown = undefined;
         if (!(parse.body instanceof z.ZodVoid)) {
-          const raw = await request.json();
-          body = parse.body.parse(raw);
+          body = parse.body.parse(raw.body);
         }
 
         return await def.handler(request, context, { params, body });

@@ -1,6 +1,5 @@
 import {
   type HttpFunctionOptions,
-  type HttpMethod,
   type HttpRequest,
   type HttpResponseInit,
   type InvocationContext,
@@ -23,8 +22,6 @@ export type ParsedInput<T> = {
 
 export interface FunctionDefinition<
   TConfig extends {
-    methods: HttpMethod[];
-    route: string;
     parse: { params: z.ZodTypeAny; body: z.ZodTypeAny };
   },
   TResponse,
@@ -49,10 +46,7 @@ type ExtractBody<T> = T extends { jsonBody: infer J }
 type ExtractResponse<T> = { status: ExtractStatus<T>; body: ExtractBody<T> };
 
 export function defineFunction<
-  const TOptions extends Omit<HttpFunctionOptions, "handler"> & {
-    methods: HttpMethod[];
-    route: string;
-  },
+  const TOptions extends Omit<HttpFunctionOptions, "handler">,
   const TParse extends { params?: z.ZodTypeAny; body?: z.ZodTypeAny } = {},
   TReturn extends HttpResponseInit = HttpResponseInit,
 >(

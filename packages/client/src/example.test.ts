@@ -1,7 +1,8 @@
-import { createClient } from "@my-app/api";
+import type { functions } from "@my-app/api";
+import { createClient } from "./create-client.js";
 import { describe, expect, it } from "vitest";
 
-const client = createClient("http://localhost:7071");
+const client = createClient<typeof functions>("http://localhost:7071");
 
 describe("todo API", () => {
   it("gets a todo", async () => {
