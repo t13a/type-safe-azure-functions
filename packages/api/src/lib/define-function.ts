@@ -1,6 +1,5 @@
 import {
   type HttpFunctionOptions,
-  type HttpMethod,
   type HttpRequest,
   type HttpResponseInit,
   type InvocationContext,
@@ -9,23 +8,17 @@ import { z } from "zod";
 
 declare const ResponseType: unique symbol;
 
-type DefaultParams = z.ZodObject<{}, "strip", z.ZodTypeAny>;
-
 type ParseConfig<T> = {
-  params: T extends { params: infer P extends z.ZodTypeAny } ? P : DefaultParams;
   body: T extends { body: infer B extends z.ZodTypeAny } ? B : z.ZodVoid;
 };
 
 export type ParsedInput<T> = {
-  params: T extends { params: infer P extends z.ZodTypeAny } ? z.infer<P> : Record<string, never>;
   body: T extends { body: infer B extends z.ZodTypeAny } ? z.infer<B> : void;
 };
 
 export interface FunctionDefinition<
   TConfig extends {
-    methods: HttpMethod[];
-    route: string;
-    parse: { params: z.ZodTypeAny; body: z.ZodTypeAny };
+    parse: { body: z.ZodTypeAny };
   },
   TResponse,
 > {
@@ -49,11 +42,8 @@ type ExtractBody<T> = T extends { jsonBody: infer J }
 type ExtractResponse<T> = { status: ExtractStatus<T>; body: ExtractBody<T> };
 
 export function defineFunction<
-  const TOptions extends Omit<HttpFunctionOptions, "handler"> & {
-    methods: HttpMethod[];
-    route: string;
-  },
-  const TParse extends { params?: z.ZodTypeAny; body?: z.ZodTypeAny } = {},
+  const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,
+  const TParse extends { body?: z.ZodTypeAny } = {},
   TReturn extends HttpResponseInit = HttpResponseInit,
 >(
   options: TOptions & {
@@ -69,7 +59,6 @@ export function defineFunction<
   const config = {
     ...rest,
     parse: {
-      params: parse?.params ?? z.object({}),
       body: parse?.body ?? z.void(),
     },
   };

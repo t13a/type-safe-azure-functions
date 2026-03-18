@@ -2,18 +2,16 @@ import { z } from "zod";
 import { defineFunction } from "../lib/define-function.js";
 
 export const getTodo = defineFunction({
-  methods: ["GET"],
-  route: "todos/{id}",
   authLevel: "anonymous",
   parse: {
-    params: z.object({ id: z.string().uuid() }),
+    body: z.object({ id: z.string().uuid() }),
   },
-  handler: async (request, context, { params }) => {
-    context.log(`Fetching todo ${params.id}`);
+  handler: async (request, context, { body }) => {
+    context.log(`Fetching todo ${body.id}`);
 
     return {
       jsonBody: {
-        id: params.id,
+        id: body.id,
         title: "Sample todo",
         completed: false,
       },
