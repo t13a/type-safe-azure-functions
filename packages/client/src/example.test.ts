@@ -6,9 +6,7 @@ const client = createClient<typeof functions>("http://localhost:7071");
 
 describe("todo API", () => {
   it("gets a todo", async () => {
-    const res = await client.getTodo({
-      params: { id: "550e8400-e29b-41d4-a716-446655440000" },
-    });
+    const res = await client.getTodo({ id: "550e8400-e29b-41d4-a716-446655440000" });
     if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
     const todo = await res.json();
     expect(todo.title).toBe("Sample todo");
@@ -16,7 +14,7 @@ describe("todo API", () => {
   });
 
   it("creates a todo", async () => {
-    const res = await client.createTodo({ body: { title: "Buy milk" } });
+    const res = await client.createTodo({ title: "Buy milk" });
     if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
     const todo = await res.json();
     expect(todo.id).toBeTypeOf("string");
@@ -24,15 +22,15 @@ describe("todo API", () => {
     expect(todo.completed).toBe(false);
   });
 
-  it("returns 400 for invalid params", async () => {
-    const res = await client.getTodo({ params: { id: "not-a-uuid" } });
+  it("returns 400 for invalid input", async () => {
+    const res = await client.getTodo({ id: "not-a-uuid" });
     if (res.status !== 400) throw new Error(`Expected 400, got ${res.status}`);
     const err = await res.json();
     expect(err.errors).toBeDefined();
   });
 
   it("returns 400 for invalid body", async () => {
-    const res = await client.createTodo({ body: { title: "" } });
+    const res = await client.createTodo({ title: "" });
     if (res.status !== 400) throw new Error(`Expected 400, got ${res.status}`);
     const err = await res.json();
     expect(err.errors).toBeDefined();

@@ -29,16 +29,13 @@ export function registerFunction(
       context: InvocationContext,
     ): Promise<HttpResponseInit> => {
       try {
-        const raw = (await request.json()) as { params?: unknown; body?: unknown };
-
-        const params = parse.params.parse(raw.params ?? {});
-
         let body: unknown = undefined;
         if (!(parse.body instanceof z.ZodVoid)) {
-          body = parse.body.parse(raw.body);
+          const raw = await request.json();
+          body = parse.body.parse(raw);
         }
 
-        return await def.handler(request, context, { params, body });
+        return await def.handler(request, context, { body });
       } catch (err) {
         if (err instanceof z.ZodError) {
           return badRequest(err);
