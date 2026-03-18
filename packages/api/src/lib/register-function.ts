@@ -35,7 +35,13 @@ export function registerFunction(
           body = parse.body.parse(raw);
         }
 
-        return await def.handler(request, context, { body });
+        const parsed: Record<string, unknown> = { body };
+        if (!(parse.headers instanceof z.ZodVoid)) {
+          const raw = Object.fromEntries(request.headers.entries());
+          parsed.headers = parse.headers.parse(raw);
+        }
+
+        return await def.handler(request, context, parsed as any);
       } catch (err) {
         if (err instanceof z.ZodError) {
           return badRequest(err);

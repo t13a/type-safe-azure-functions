@@ -29,6 +29,26 @@ describe("todo API", () => {
     expect(err.errors).toBeDefined();
   });
 
+  it("passes custom headers with body", async () => {
+    const res = await client.getTodo({
+      headers: { "x-request-id": "abc-123" },
+      body: { id: "550e8400-e29b-41d4-a716-446655440000" },
+    });
+    if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
+    const todo = await res.json();
+    expect(todo.title).toBe("Sample todo");
+  });
+
+  it("allows Content-Type override", async () => {
+    const res = await client.createTodo({
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: { title: "Test with charset" },
+    });
+    if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
+    const todo = await res.json();
+    expect(todo.title).toBe("Test with charset");
+  });
+
   it("returns 400 for invalid body", async () => {
     const res = await client.createTodo({ body: { title: "" } });
     if (res.status !== 400) throw new Error(`Expected 400, got ${res.status}`);
