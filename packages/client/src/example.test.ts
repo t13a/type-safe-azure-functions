@@ -29,6 +29,23 @@ describe("todo API", () => {
     expect(err.errors).toBeDefined();
   });
 
+  it("authenticates with valid bearer token", async () => {
+    const res = await client.checkAuth({
+      headers: { authorization: "Bearer my-secret-token" },
+    });
+    if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
+    const data = await res.json();
+    expect(data.authenticated).toBe(true);
+    expect(data.token).toBe("my-secret-token");
+  });
+
+  it("returns 400 for missing authorization header", async () => {
+    const res = await client.checkAuth();
+    if (res.status !== 400) throw new Error(`Expected 400, got ${res.status}`);
+    const err = await res.json();
+    expect(err.errors).toBeDefined();
+  });
+
   it("returns 400 for invalid body", async () => {
     const res = await client.createTodo({ body: { title: "" } });
     if (res.status !== 400) throw new Error(`Expected 400, got ${res.status}`);

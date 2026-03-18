@@ -24,7 +24,7 @@ This library trades full Azure Functions compatibility for simplicity. The follo
 |---|---|
 | HTTP method | Always `POST` |
 | Route | `/api/{functionName}` (function name as-is) |
-| Request format | JSON body only (no URL path/query params) |
+| Request format | JSON body + HTTP headers (no URL path/query params) |
 
 `methods` and `route` are excluded from `defineFunction` options — specifying them is a compile error. If you need custom routing or other HTTP methods, use `app.http()` directly.
 
@@ -40,7 +40,8 @@ packages/
 │   │   ├── functions/
 │   │   │   ├── index.ts            # Function map (shared by server and client)
 │   │   │   ├── get-todo.ts
-│   │   │   └── create-todo.ts
+│   │   │   ├── create-todo.ts
+│   │   │   └── check-auth.ts       # Header validation example
 │   │   ├── app.ts                  # Azure Functions entry point
 │   │   └── index.ts                # Re-exports FunctionDefinition, functions map
 │   └── package.json
@@ -87,6 +88,7 @@ export const createTodo = defineFunction({
       completed: z.boolean().optional().default(false),
     }),
     // parse.body is optional — omit for endpoints that take no input
+    // parse.headers is also available — see "Header validation" below
   },
   handler: async (request, context, { body }) => {
     context.log(`Creating todo: ${body.title}`);
@@ -103,6 +105,34 @@ export const createTodo = defineFunction({
 ```
 
 The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler` — those are controlled by the framework. `authLevel`, `retry`, and other options work as-is.
+
+## Header validation
+
+Use `parse.headers` to validate HTTP headers with a Zod schema. The parsed result is available as `parsed.headers` in the handler, fully typed.
+
+```typescript
+import { z } from "zod";
+import { defineFunction } from "../lib/define-function.js";
+
+export const checkAuth = defineFunction({
+  parse: {
+    headers: z.object({
+      authorization: z.string().regex(/^Bearer .+$/),
+    }),
+  },
+  handler: async (_request, _context, { headers }) => {
+    const token = headers.authorization.replace("Bearer ", "");
+    return {
+      jsonBody: { authenticated: true, token },
+    };
+  },
+});
+```
+
+- `parse.headers` is optional — omit it for endpoints that don't need header validation
+- When omitted, `parsed.headers` is absent from the handler's third argument (not `undefined`, absent)
+- Invalid or missing headers return 400 with the same `{ errors: ... }` shape as body validation errors
+- `parse.body` and `parse.headers` can be combined — both are validated in the same request
 
 ## Registering functions
 
@@ -129,6 +159,11 @@ import { createClient } from "./create-client.js";
 
 const client = createClient<typeof functions>("http://localhost:7071");
 
+// Custom headers can be passed to any endpoint
+const authRes = await client.checkAuth({
+  headers: { authorization: "Bearer my-token" },
+});
+
 // Status code narrows the json() return type
 const res = await client.getTodo({ body: { id: "550e8400-..." } });
 if (res.status === 200) {
@@ -144,6 +179,8 @@ if (res.status === 200) {
 ```
 
 The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Validation errors (400) and unhandled exceptions (500) have fixed response shapes derived from the server implementation.
+
+Headers are passed as `HeadersInit` (the standard fetch type) — `Record<string, string>`, `Headers`, or `string[][]` all work. User-provided headers are merged with the default `Content-Type: application/json`, and user values take precedence.
 
 ## Adding a new endpoint
 

@@ -10,15 +10,18 @@ declare const ResponseType: unique symbol;
 
 type ParseConfig<T> = {
   body: T extends { body: infer B extends z.ZodTypeAny } ? B : z.ZodVoid;
+  headers: T extends { headers: infer H extends z.ZodTypeAny } ? H : z.ZodVoid;
 };
 
 export type ParsedInput<T> = {
   body: T extends { body: infer B extends z.ZodTypeAny } ? z.infer<B> : void;
-};
+} & (T extends { headers: infer H extends z.ZodTypeAny }
+  ? { headers: z.infer<H> }
+  : {});
 
 export interface FunctionDefinition<
   TConfig extends {
-    parse: { body: z.ZodTypeAny };
+    parse: { body: z.ZodTypeAny; headers: z.ZodTypeAny };
   },
   TResponse,
 > {
@@ -43,7 +46,7 @@ type ExtractResponse<T> = { status: ExtractStatus<T>; body: ExtractBody<T> };
 
 export function defineFunction<
   const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,
-  const TParse extends { body?: z.ZodTypeAny } = {},
+  const TParse extends { body?: z.ZodTypeAny; headers?: z.ZodTypeAny } = {},
   TReturn extends HttpResponseInit = HttpResponseInit,
 >(
   options: TOptions & {
@@ -60,6 +63,7 @@ export function defineFunction<
     ...rest,
     parse: {
       body: parse?.body ?? z.void(),
+      headers: parse?.headers ?? z.void(),
     },
   };
   return { config, handler } as FunctionDefinition<
