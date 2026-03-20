@@ -35,7 +35,7 @@ packages/
 ├── api/
 │   ├── src/
 │   │   ├── lib/
-│   │   │   ├── define-function.ts   # defineFunction + types (no @azure/functions runtime dep)
+│   │   │   ├── define-function.ts   # defineFunction + defaultErrorHandler + types
 │   │   │   └── register-function.ts # registerFunction (calls app.http())
 │   │   ├── functions/
 │   │   │   ├── auth-me.ts
@@ -118,6 +118,10 @@ type User = { name: string };
 
 const usersByToken = new Map<string, User>().set("my-secret-token", { name: "John Doe"});
 
+function unauthorizedErrorHandler() {
+  return { status: 401 as const, jsonBody: { error: "Unauthorized" } };
+}
+
 export const authMe = defineFunction({
   parse: {
     headers: z.object({
@@ -126,19 +130,14 @@ export const authMe = defineFunction({
       }),
     }),
   },
-  async handler(_request, context, { headers }) {
+  handler: async (_request, context, { headers }) => {
     context.log(`Autenticating token: ${headers.authorization.token}`);
 
     const token = headers.authorization.token;
     const user = usersByToken.get(token);
 
     if (!user) {
-      return {
-        status: 401 as const,
-        jsonBody: {
-          error: "Unauthorized"
-        }
-      }
+      return unauthorizedErrorHandler();
     }
 
     return {
@@ -146,13 +145,45 @@ export const authMe = defineFunction({
       jsonBody: user
     };
   },
+  errorHandler: (request, context, error) => {
+    if (!request.headers.has("authorization")) {
+      return unauthorizedErrorHandler();
+    }
+
+    return defaultErrorHandler(request, context, error);
+  },
 });
 ```
 
 - `parse.headers` is optional — omit it for endpoints that don't need header validation
 - When omitted, `parsed.headers` is absent from the handler's third argument (not `undefined`, absent)
-- Invalid or missing headers return 400 with the same `{ errors: ... }` shape as body validation errors
 - `parse.body` and `parse.headers` can be combined — both are validated in the same request
+
+## Error handling
+
+By default, validation errors return 400 and unhandled exceptions return 500. You can override this per-function with `errorHandler`:
+
+```typescript
+import { defaultErrorHandler, defineFunction } from "../lib/define-function";
+
+export const authMe = defineFunction({
+  parse: { /* ... */ },
+  handler: async (request, context, parsed) => { /* ... */ },
+  errorHandler: (request, context, error) => {
+    // Return 401 instead of 400 when the Authorization header is missing
+    if (!request.headers.has("authorization")) {
+      return { status: 401 as const, jsonBody: { error: "Unauthorized" } };
+    }
+
+    // Fall back to the default behavior for other errors
+    return defaultErrorHandler(request, context, error);
+  },
+});
+```
+
+- `errorHandler` receives `request`, `context`, and `error` — can be sync or async
+- When omitted, `defaultErrorHandler` is used (400 for `ZodError`, 500 for everything else)
+- The error handler's return type is inferred and included in the client's response type union, so status code narrowing works for custom error shapes too
 
 ## Registering functions
 
@@ -185,10 +216,10 @@ const authRes = await client.authMe({
 });
 
 // Status code narrows the json() return type
-const res = await client.listTodos({ body: { id: "550e8400-..." } });
+const res = await client.createTodo({ body: { title: "Buy milk" } });
 if (res.status === 200) {
   const todo = await res.json();
-  // todo: [ { id: string; title: string; completed: boolean } ]
+  // todo: { id: string; title: string; completed: boolean }
 } else if (res.status === 400) {
   const err = await res.json();
   // err: { errors: ZodError.flatten() result }
@@ -196,9 +227,22 @@ if (res.status === 200) {
   const err = await res.json();
   // err: { error: string }
 }
+
+// Custom errorHandler shapes are also narrowed
+const authRes = await client.authMe({
+  headers: { authorization: "Bearer my-token" },
+});
+if (authRes.status === 200) {
+  const user = await authRes.json();
+  // user: { name: string }
+} else {
+  // status: 401
+  const err = await authRes.json();
+  // err: { error: string }
+}
 ```
 
-The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Validation errors (400) and unhandled exceptions (500) have fixed response shapes derived from the server implementation.
+The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Error response shapes are inferred from the server's `errorHandler` (or `defaultErrorHandler` when omitted), so custom error types flow to the client automatically.
 
 Headers are passed as `HeadersInit` (the standard fetch type) — `Record<string, string>`, `Headers`, or `string[][]` all work. User-provided headers are merged with the default `Content-Type: application/json`, and user values take precedence.
 

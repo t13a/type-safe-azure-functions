@@ -48,4 +48,11 @@ describe("todo API", () => {
     const err = await res.json();
     expect(err.error).toBe("Unauthorized");
   });
+
+  it("returns 401 for missing header", async () => {
+    const res = await client.authMe();
+    if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
+    const err = await res.json();
+    expect(err.error).toBe("Unauthorized");
+  });
 });

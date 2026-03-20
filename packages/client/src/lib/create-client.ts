@@ -1,17 +1,15 @@
-import type { FunctionDefinition, badRequest, internalServerError } from "@my-app/api";
+import type { FunctionDefinition } from "@my-app/api";
 import type { z } from "zod";
 
 type InferResponse<T> =
   T extends FunctionDefinition<any, infer R> ? R : never;
 
-type DistributeResponse<T> = T extends { status: infer S extends number; body: infer B }
+type TypedResponse<TResponse> = TResponse extends {
+  status: infer S extends number;
+  body: infer B;
+}
   ? Omit<Response, "json"> & { status: S; json(): Promise<B> }
   : never;
-
-type TypedResponse<TResponse> =
-  | DistributeResponse<TResponse>
-  | (Omit<Response, "json"> & { status: 400; json(): Promise<ReturnType<typeof badRequest>["jsonBody"]> })
-  | (Omit<Response, "json"> & { status: 500; json(): Promise<ReturnType<typeof internalServerError>["jsonBody"]> });
 
 type ClientMethod<T> = T extends FunctionDefinition<
   infer C extends { parse: { body: z.ZodTypeAny; headers: z.ZodTypeAny } },
