@@ -118,9 +118,9 @@ type User = { name: string };
 
 const usersByToken = new Map<string, User>().set("my-secret-token", { name: "John Doe"});
 
-function unauthorizedErrorHandler() {
+const unauthorizedErrorHandler = () => {
   return { status: 401 as const, jsonBody: { error: "Unauthorized" } };
-}
+};
 
 export const authMe = defineFunction({
   parse: {

@@ -8,36 +8,49 @@ import { z } from "zod";
 
 declare const ResponseType: unique symbol;
 
-type ParseConfig<T> = {
+export type FunctionParse = {
+  body?: z.ZodTypeAny;
+  headers?: z.ZodTypeAny;
+};
+
+export type FunctionParsed<TParse extends FunctionParse> = {
+  body: TParse extends { body: infer B extends z.ZodTypeAny } ? z.infer<B> : void;
+  headers: TParse extends { headers: infer H extends z.ZodTypeAny } ? z.infer<H> : void;
+}
+
+export type FunctionHandler<
+  TParse extends FunctionParse = {},
+  TReturn extends HttpResponseInit = HttpResponseInit
+> = (
+  request: HttpRequest,
+  context: InvocationContext,
+  parsed: FunctionParsed<TParse>,
+) => Promise<TReturn>;
+
+export type FunctionErrorHandler<
+  TError = unknown,
+  TErrorReturn extends HttpResponseInit = HttpResponseInit
+> = (
+  request: HttpRequest,
+  context: InvocationContext,
+  error: TError,
+) => TErrorReturn | Promise<TErrorReturn>;
+
+export interface FunctionDefinition<
+  TParse extends Required<FunctionParse>,
+  TResponse,
+> {
+  options: Omit<HttpFunctionOptions, "handler" | "methods" | "route">;
+  parse: TParse;
+  handler: FunctionHandler<TParse>;
+  errorHandler: FunctionErrorHandler;
+  [ResponseType]: TResponse;
+}
+
+type NormalizeParse<T> = {
   body: T extends { body: infer B extends z.ZodTypeAny } ? B : z.ZodVoid;
   headers: T extends { headers: infer H extends z.ZodTypeAny } ? H : z.ZodVoid;
 };
-
-export type ParsedInput<T> = {
-  body: T extends { body: infer B extends z.ZodTypeAny } ? z.infer<B> : void;
-} & (T extends { headers: infer H extends z.ZodTypeAny }
-  ? { headers: z.infer<H> }
-  : {});
-
-export interface FunctionDefinition<
-  TConfig extends {
-    parse: { body: z.ZodTypeAny; headers: z.ZodTypeAny };
-  },
-  TResponse,
-> {
-  config: TConfig;
-  handler: (
-    request: HttpRequest,
-    context: InvocationContext,
-    parsed: ParsedInput<TConfig["parse"]>,
-  ) => Promise<HttpResponseInit>;
-  errorHandler: (
-    request: HttpRequest,
-    context: InvocationContext,
-    error: unknown,
-  ) => HttpResponseInit | Promise<HttpResponseInit>;
-  [ResponseType]: TResponse;
-}
 
 type ExtractStatus<T> = T extends { status: infer S extends number } ? S : 200;
 
@@ -51,48 +64,37 @@ type ExtractResponse<T> = T extends any
   ? { status: ExtractStatus<T>; body: ExtractBody<T> }
   : never;
 
-export function defaultErrorHandler(
-  _request: HttpRequest,
-  context: InvocationContext,
-  error: unknown,
-) {
+export const defaultErrorHandler = ((_request, context, error) => {
   if (error instanceof z.ZodError) {
     return { status: 400 as const, jsonBody: { errors: error.flatten() } };
   }
   context.error("Unhandled error", error);
   return { status: 500 as const, jsonBody: { error: "Internal server error" } };
-}
+}) satisfies FunctionErrorHandler;
 
 export function defineFunction<
   const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,
-  const TParse extends { body?: z.ZodTypeAny; headers?: z.ZodTypeAny } = {},
+  const TParse extends FunctionParse = {},
   TReturn extends HttpResponseInit = HttpResponseInit,
   TErrorReturn extends HttpResponseInit = ReturnType<typeof defaultErrorHandler>,
 >(
   options: TOptions & {
     parse?: TParse;
-    handler: (
-      request: HttpRequest,
-      context: InvocationContext,
-      parsed: ParsedInput<TParse>,
-    ) => Promise<TReturn>;
-    errorHandler?: (
-      request: HttpRequest,
-      context: InvocationContext,
-      error: unknown,
-    ) => TErrorReturn | Promise<TErrorReturn>;
+    handler: FunctionHandler<TParse, TReturn>;
+    errorHandler?: FunctionErrorHandler<unknown, TErrorReturn>;
   },
-): FunctionDefinition<TOptions & { parse: ParseConfig<TParse> }, ExtractResponse<TReturn | TErrorReturn>> {
+): FunctionDefinition<NormalizeParse<TParse>, ExtractResponse<TReturn | TErrorReturn>> {
   const { handler, errorHandler, parse, ...rest } = options as any;
-  const config = {
-    ...rest,
+  return {
+    options: rest,
     parse: {
       body: parse?.body ?? z.void(),
       headers: parse?.headers ?? z.void(),
     },
-  };
-  return { config, handler, errorHandler: errorHandler ?? defaultErrorHandler } as FunctionDefinition<
-    TOptions & { parse: ParseConfig<TParse> },
+    handler,
+    errorHandler: errorHandler ?? defaultErrorHandler,
+  } as FunctionDefinition<
+    NormalizeParse<TParse>,
     ExtractResponse<TReturn | TErrorReturn>
   >;
 }

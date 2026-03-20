@@ -10,10 +10,10 @@ import type { FunctionDefinition } from "./define-function.js";
 export function registerFunction(
   name: string, def: FunctionDefinition<any, any>
 ): void {
-  const { parse, ...httpOptions } = def.config;
+  const { options, parse } = def;
 
   app.http(name, {
-    ...httpOptions,
+    ...options,
     methods: ["POST"],
     route: name,
     handler: async (

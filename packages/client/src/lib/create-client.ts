@@ -12,12 +12,12 @@ type TypedResponse<TResponse> = TResponse extends {
   : never;
 
 type ClientMethod<T> = T extends FunctionDefinition<
-  infer C extends { parse: { body: z.ZodTypeAny; headers: z.ZodTypeAny } },
+  infer P extends { body: z.ZodTypeAny; headers: z.ZodTypeAny },
   any
 >
-  ? C["parse"]["body"] extends z.ZodVoid
+  ? P["body"] extends z.ZodVoid
     ? (input?: { headers?: HeadersInit }) => Promise<TypedResponse<InferResponse<T>>>
-    : (input: { body: z.input<C["parse"]["body"]>; headers?: HeadersInit }) => Promise<TypedResponse<InferResponse<T>>>
+    : (input: { body: z.input<P["body"]>; headers?: HeadersInit }) => Promise<TypedResponse<InferResponse<T>>>
   : never;
 
 function normalizeHeaders(init?: HeadersInit): Record<string, string> {
