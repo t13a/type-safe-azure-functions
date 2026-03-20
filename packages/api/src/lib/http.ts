@@ -100,13 +100,21 @@ export function defineHttp<
   >;
 }
 
+export type HttpFunctionDefinitionTree = {
+  [key: string]: HttpFunctionDefinition<any, any> | HttpFunctionDefinitionTree;
+};
+
+function isDefinition(value: unknown): value is HttpFunctionDefinition<any, any> {
+  return typeof value === "object" && value !== null && "handler" in value;
+}
+
 export function registerHttp(
-  app: typeof App, name: string, def: HttpFunctionDefinition<any, any>
+  app: typeof App, name: string, route: string, def: HttpFunctionDefinition<any, any>
 ): void {
   app.http(name, {
     ...def.options,
     methods: ["POST"],
-    route: name,
+    route,
     handler: async (
       request: HttpRequest,
       context: InvocationContext,
@@ -130,4 +138,21 @@ export function registerHttp(
       }
     },
   });
+}
+
+export function registerHttpAll(
+  app: typeof App,
+  tree: HttpFunctionDefinitionTree,
+  routePrefix = "",
+  namePrefix = "",
+): void {
+  for (const [key, value] of Object.entries(tree)) {
+    const route = routePrefix ? `${routePrefix}/${key}` : key;
+    const name = namePrefix ? `${namePrefix}-${key}` : key;
+    if (isDefinition(value)) {
+      registerHttp(app, name, route, value);
+    } else {
+      registerHttpAll(app, value as HttpFunctionDefinitionTree, route, name);
+    }
+  }
 }

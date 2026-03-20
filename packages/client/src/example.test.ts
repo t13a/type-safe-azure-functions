@@ -57,3 +57,13 @@ describe("todo API", () => {
     expect(err.message).toBe("Unauthorized");
   });
 });
+
+describe("management API", () => {
+  it("shows stats", async () => {
+    const res = await client.management.showStats();
+    if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
+    const stats = await res.json();
+    expect(stats.totalUsers).toBe(42);
+    expect(stats.activeTodos).toBe(7);
+  });
+});

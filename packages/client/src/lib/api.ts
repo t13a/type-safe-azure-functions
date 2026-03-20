@@ -27,18 +27,25 @@ function normalizeHeaders(init?: HeadersInit): Record<string, string> {
   return init;
 }
 
-type Client<T extends Record<string, HttpFunctionDefinition<any, any>>> = {
-  [K in keyof T]: ClientMethod<T[K]>;
+type Client<T> = {
+  [K in keyof T]: T[K] extends HttpFunctionDefinition<any, any>
+    ? ClientMethod<T[K]>
+    : T[K] extends Record<string, any>
+      ? Client<T[K]>
+      : never;
 };
 
 export function createClient<
-  T extends Record<string, HttpFunctionDefinition<any, any>>,
->(baseUrl: string): Client<T> {
+  T extends Record<string, any>,
+>(baseUrl: string, pathPrefix = ""): Client<T> {
   return new Proxy({} as Client<T>, {
     get(_, prop: string | symbol) {
       if (typeof prop !== "string") return undefined;
-      return async (input?: { body?: unknown; headers?: HeadersInit }) => {
-        return fetch(`${baseUrl}/api/${prop}`, {
+      if (prop === "then") return undefined;
+      const path = pathPrefix ? `${pathPrefix}/${prop}` : prop;
+
+      const fn = async (input?: { body?: unknown; headers?: HeadersInit }) => {
+        return fetch(`${baseUrl}/api/${path}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -47,6 +54,14 @@ export function createClient<
           body: JSON.stringify(input?.body ?? {}),
         });
       };
+
+      return new Proxy(fn, {
+        get(target, innerProp: string | symbol) {
+          if (typeof innerProp !== "string") return Reflect.get(target, innerProp);
+          if (innerProp === "then") return undefined;
+          return (createClient as any)(baseUrl, path)[innerProp];
+        },
+      });
     },
   });
 }
