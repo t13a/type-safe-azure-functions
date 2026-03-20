@@ -2,7 +2,6 @@ import { z } from "zod";
 import { defineFunction } from "../lib/define-function.js";
 
 export const createTodo = defineFunction({
-  authLevel: "anonymous",
   parse: {
     body: z.object({
       title: z.string().min(1),

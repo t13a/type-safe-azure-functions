@@ -1,13 +1,15 @@
 import type { FunctionDefinition, badRequest, internalServerError } from "@my-app/api";
 import type { z } from "zod";
 
-type InferStatus<T> =
-  T extends FunctionDefinition<any, { status: infer S extends number; body: any }> ? S : never;
-type InferBody<T> =
-  T extends FunctionDefinition<any, { status: any; body: infer B }> ? B : never;
+type InferResponse<T> =
+  T extends FunctionDefinition<any, infer R> ? R : never;
 
-type TypedResponse<TStatus extends number, TBody> =
-  | (Omit<Response, "json"> & { status: TStatus; json(): Promise<TBody> })
+type DistributeResponse<T> = T extends { status: infer S extends number; body: infer B }
+  ? Omit<Response, "json"> & { status: S; json(): Promise<B> }
+  : never;
+
+type TypedResponse<TResponse> =
+  | DistributeResponse<TResponse>
   | (Omit<Response, "json"> & { status: 400; json(): Promise<ReturnType<typeof badRequest>["jsonBody"]> })
   | (Omit<Response, "json"> & { status: 500; json(): Promise<ReturnType<typeof internalServerError>["jsonBody"]> });
 
@@ -16,8 +18,8 @@ type ClientMethod<T> = T extends FunctionDefinition<
   any
 >
   ? C["parse"]["body"] extends z.ZodVoid
-    ? (input?: { headers?: HeadersInit }) => Promise<TypedResponse<InferStatus<T>, InferBody<T>>>
-    : (input: { body: z.input<C["parse"]["body"]>; headers?: HeadersInit }) => Promise<TypedResponse<InferStatus<T>, InferBody<T>>>
+    ? (input?: { headers?: HeadersInit }) => Promise<TypedResponse<InferResponse<T>>>
+    : (input: { body: z.input<C["parse"]["body"]>; headers?: HeadersInit }) => Promise<TypedResponse<InferResponse<T>>>
   : never;
 
 function normalizeHeaders(init?: HeadersInit): Record<string, string> {

@@ -42,7 +42,9 @@ type ExtractBody<T> = T extends { jsonBody: infer J }
     ? unknown
     : void;
 
-type ExtractResponse<T> = { status: ExtractStatus<T>; body: ExtractBody<T> };
+type ExtractResponse<T> = T extends any
+  ? { status: ExtractStatus<T>; body: ExtractBody<T> }
+  : never;
 
 export function defineFunction<
   const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,

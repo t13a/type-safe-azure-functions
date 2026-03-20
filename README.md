@@ -2,7 +2,7 @@
 
 > If you can use [Hono](https://hono.dev/docs/guides/rpc), use Hono. This exists because some of us are not that fortunate.
 
-Type-safe API communication for Azure Functions v4, inspired by Hono RPC. Response types are inferred from handler implementations — no hand-written response schemas needed.
+Type-safe API communication for Azure Functions v4, inspired by Hono RPC and Astro Actions. Response types are inferred from handler implementations — no hand-written response schemas needed.
 
 ## How it works
 
@@ -38,16 +38,17 @@ packages/
 │   │   │   ├── define-function.ts   # defineFunction + types (no @azure/functions runtime dep)
 │   │   │   └── register-function.ts # registerFunction (calls app.http())
 │   │   ├── functions/
-│   │   │   ├── index.ts            # Function map (shared by server and client)
-│   │   │   ├── get-todo.ts
+│   │   │   ├── auth-me.ts
 │   │   │   ├── create-todo.ts
-│   │   │   └── check-auth.ts       # Header validation example
+│   │   │   ├── index.ts            # Function map (shared by server and client)
+│   │   │   └── list-todo.ts
 │   │   ├── app.ts                  # Azure Functions entry point
 │   │   └── index.ts                # Re-exports FunctionDefinition, functions map
 │   └── package.json
 └── client/                         # Usage example / integration tests
     └── src/
-        ├── create-client.ts        # createClient (generic typed fetch wrapper)
+        ├── lib/
+        │   └── create-client.ts    # createClient (generic typed fetch wrapper)
         └── example.test.ts
 ```
 
@@ -81,7 +82,6 @@ import { z } from "zod";
 import { defineFunction } from "../lib/define-function.js";
 
 export const createTodo = defineFunction({
-  authLevel: "anonymous",
   parse: {
     body: z.object({
       title: z.string().min(1),
@@ -112,18 +112,38 @@ Use `parse.headers` to validate HTTP headers with a Zod schema. The parsed resul
 
 ```typescript
 import { z } from "zod";
-import { defineFunction } from "../lib/define-function.js";
+import { defineFunction } from "../lib/define-function";
 
-export const checkAuth = defineFunction({
+type User = { name: string };
+
+const usersByToken = new Map<string, User>().set("my-secret-token", { name: "John Doe"});
+
+export const authMe = defineFunction({
   parse: {
     headers: z.object({
-      authorization: z.string().regex(/^Bearer .+$/),
+      authorization: z.string().regex(/^Bearer .+$/).transform((arg) => {
+        return { token: arg.replace("Bearer ", "") };
+      }),
     }),
   },
-  handler: async (_request, _context, { headers }) => {
-    const token = headers.authorization.replace("Bearer ", "");
+  async handler(_request, context, { headers }) {
+    context.log(`Autenticating token: ${headers.authorization.token}`);
+
+    const token = headers.authorization.token;
+    const user = usersByToken.get(token);
+
+    if (!user) {
+      return {
+        status: 401 as const,
+        jsonBody: {
+          error: "Unauthorized"
+        }
+      }
+    }
+
     return {
-      jsonBody: { authenticated: true, token },
+      status: 200 as const,
+      jsonBody: user
     };
   },
 });
@@ -160,15 +180,15 @@ import { createClient } from "./create-client.js";
 const client = createClient<typeof functions>("http://localhost:7071");
 
 // Custom headers can be passed to any endpoint
-const authRes = await client.checkAuth({
+const authRes = await client.authMe({
   headers: { authorization: "Bearer my-token" },
 });
 
 // Status code narrows the json() return type
-const res = await client.getTodo({ body: { id: "550e8400-..." } });
+const res = await client.listTodos({ body: { id: "550e8400-..." } });
 if (res.status === 200) {
   const todo = await res.json();
-  // todo: { id: string; title: string; completed: boolean }
+  // todo: [ { id: string; title: string; completed: boolean } ]
 } else if (res.status === 400) {
   const err = await res.json();
   // err: { errors: ZodError.flatten() result }

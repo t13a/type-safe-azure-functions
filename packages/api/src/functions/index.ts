@@ -1,5 +1,5 @@
-import { checkAuth } from "./check-auth.js";
+import { authMe } from "./auth-me.js";
 import { createTodo } from "./create-todo.js";
-import { getTodo } from "./get-todo.js";
+import { listTodos } from "./list-todos.js";
 
-export const functions = { getTodo, createTodo, checkAuth } as const;
+export const functions = { listTodos, createTodo, authMe } as const;
