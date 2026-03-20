@@ -1,6 +1,7 @@
-import { registerFunction } from "./lib/register-function.js";
-import { functions } from "./functions/index.js";
+import { registerHttp } from "./lib/http.js";
+import { defs } from "./functions/index.js";
+import { app } from "@azure/functions";
 
-for (const [name, def] of Object.entries(functions)) {
-  registerFunction(name, def);
+for (const [name, def] of Object.entries(defs)) {
+  registerHttp(app, name, def);
 }

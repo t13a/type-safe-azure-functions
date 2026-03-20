@@ -1,8 +1,8 @@
-import type { functions } from "@my-app/api";
-import { createClient } from "./lib/create-client.js";
+import type { defs } from "@my-app/api";
+import { createClient } from "./lib/api.js";
 import { describe, expect, it } from "vitest";
 
-const client = createClient<typeof functions>("http://localhost:7071");
+const client = createClient<typeof defs>("http://localhost:7071");
 
 describe("todo API", () => {
   it("list all todos", async () => {
@@ -28,6 +28,7 @@ describe("todo API", () => {
     const res = await client.createTodo({ body: { title: "" } });
     if (res.status !== 400) throw new Error(`Expected 400, got ${res.status}`);
     const err = await res.json();
+    expect(err.message).toBe("Bad Request");
     expect(err.errors).toBeDefined();
   });
 
@@ -46,13 +47,13 @@ describe("todo API", () => {
     });
     if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
     const err = await res.json();
-    expect(err.error).toBe("Unauthorized");
+    expect(err.message).toBe("Unauthorized");
   });
 
   it("returns 401 for missing header", async () => {
     const res = await client.authMe();
     if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
     const err = await res.json();
-    expect(err.error).toBe("Unauthorized");
+    expect(err.message).toBe("Unauthorized");
   });
 });

@@ -1,16 +1,16 @@
 import { z } from "zod";
-import { defaultErrorHandler, defineFunction, type FunctionHandler, type FunctionErrorHandler, type FunctionParse } from "../lib/define-function";
+import { defaultErrorHandler, defineHttp } from "../lib/http";
 
 type User = { name: string };
 
 const usersByToken = new Map<string, User>().set("my-secret-token", { name: "John Doe"});
 
 const unauthorizedErrorHandler = () => {
-  return { status: 401 as const, jsonBody: { error: "Unauthorized" } };
+  return { status: 401 as const, jsonBody: { message: "Unauthorized" } } as const;
 };
 
-export const authMe = defineFunction({
-  parse: {
+export const authMe = defineHttp({
+  parser: {
     headers: z.object({
       authorization: z.string().regex(/^Bearer .+$/).transform((arg) => {
         return { token: arg.replace("Bearer ", "") };
@@ -27,13 +27,10 @@ export const authMe = defineFunction({
       return unauthorizedErrorHandler();
     }
 
-    return {
-      status: 200 as const,
-      jsonBody: user
-    };
+    return { status: 200, jsonBody: user } as const;
   },
-  errorHandler: (request, context, error) => {
-    if (!request.headers.has("authorizaton")) {
+  errorHandler: async (request, context, error) => {
+    if (!request.headers.has("authorization")) {
       return unauthorizedErrorHandler();
     }
 

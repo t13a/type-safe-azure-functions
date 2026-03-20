@@ -1,8 +1,8 @@
-import type { FunctionDefinition } from "@my-app/api";
+import type { HttpFunctionDefinition } from "@my-app/api";
 import type { z } from "zod";
 
 type InferResponse<T> =
-  T extends FunctionDefinition<any, infer R> ? R : never;
+  T extends HttpFunctionDefinition<any, infer R> ? R : never;
 
 type TypedResponse<TResponse> = TResponse extends {
   status: infer S extends number;
@@ -11,7 +11,7 @@ type TypedResponse<TResponse> = TResponse extends {
   ? Omit<Response, "json"> & { status: S; json(): Promise<B> }
   : never;
 
-type ClientMethod<T> = T extends FunctionDefinition<
+type ClientMethod<T> = T extends HttpFunctionDefinition<
   infer P extends { body: z.ZodTypeAny; headers: z.ZodTypeAny },
   any
 >
@@ -27,12 +27,12 @@ function normalizeHeaders(init?: HeadersInit): Record<string, string> {
   return init;
 }
 
-type Client<T extends Record<string, FunctionDefinition<any, any>>> = {
+type Client<T extends Record<string, HttpFunctionDefinition<any, any>>> = {
   [K in keyof T]: ClientMethod<T[K]>;
 };
 
 export function createClient<
-  T extends Record<string, FunctionDefinition<any, any>>,
+  T extends Record<string, HttpFunctionDefinition<any, any>>,
 >(baseUrl: string): Client<T> {
   return new Proxy({} as Client<T>, {
     get(_, prop: string | symbol) {

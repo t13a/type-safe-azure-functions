@@ -1,9 +1,7 @@
-import { defineFunction } from "../lib/define-function.js";
+import { defineHttp } from "../lib/http.js";
 
-export const listTodos = defineFunction({
-  handler: async (request, context) => {
-    context.log(`Listing todos`);
-
+export const listTodos = defineHttp({
+  handler: async () => {
     return {
       jsonBody: [
         {
