@@ -31,31 +31,24 @@ type HttpFunctionClient<T> = {
 
 export function createHttpFunctionClient<
   T extends Record<string, any>,
->(baseUrl: string, pathPrefix = ""): HttpFunctionClient<T> {
-  return new Proxy({} as HttpFunctionClient<T>, {
-    get(_, prop: string | symbol) {
-      if (typeof prop !== "string") return undefined;
+>(baseUrl: string, pathPrefix = "/api"): HttpFunctionClient<T> {
+  const fn = async (input?: { body?: unknown; headers?: HeadersInit }) => {
+    return fetch(`${baseUrl}${pathPrefix}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...normalizeHeaders(input?.headers),
+      },
+      body: JSON.stringify(input?.body ?? {}),
+    });
+  };
+
+  return new Proxy(fn as unknown as HttpFunctionClient<T>, {
+    get(target, prop: string | symbol) {
+      if (typeof prop !== "string") return Reflect.get(target, prop);
       if (prop === "then") return undefined;
       const path = pathPrefix ? `${pathPrefix}/${prop}` : prop;
-
-      const fn = async (input?: { body?: unknown; headers?: HeadersInit }) => {
-        return fetch(`${baseUrl}/api/${path}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...normalizeHeaders(input?.headers),
-          },
-          body: JSON.stringify(input?.body ?? {}),
-        });
-      };
-
-      return new Proxy(fn, {
-        get(target, innerProp: string | symbol) {
-          if (typeof innerProp !== "string") return Reflect.get(target, innerProp);
-          if (innerProp === "then") return undefined;
-          return createHttpFunctionClient(baseUrl, path)[innerProp];
-        },
-      });
+      return createHttpFunctionClient(baseUrl, path);
     },
   });
 }
