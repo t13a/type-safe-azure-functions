@@ -1,4 +1,6 @@
+import type { HttpMiddleware } from "../lib/http.js";
 import { defaultMiddleware, defineHttp } from "../lib/http.js";
+import { combineMiddleware } from "../lib/http-utils.js";
 
 type User = { name: string };
 
@@ -6,18 +8,20 @@ const usersByToken = new Map<string, User>().set("my-secret-token", { name: "Joh
 
 const unauthorizedResponse = { status: 401, jsonBody: { message: "Unauthorized" } } as const;
 
+const requireAuth = (async (request, _context, next) => {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return unauthorizedResponse;
+  }
+  const user = usersByToken.get(authHeader.replace("Bearer ", ""));
+  if (!user) {
+    return unauthorizedResponse;
+  }
+  await next(request, _context);
+}) satisfies HttpMiddleware;
+
 export const authMe = defineHttp({
-  middleware: async (request, context, next) => {
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return unauthorizedResponse;
-    }
-    const user = usersByToken.get(authHeader.replace("Bearer ", ""));
-    if (!user) {
-      return unauthorizedResponse;
-    }
-    return await defaultMiddleware(request, context, next);
-  },
+  middleware: combineMiddleware([requireAuth, defaultMiddleware]),
   handler: async (request) => {
     const token = request.headers.get("authorization")!.replace("Bearer ", "");
     const user = usersByToken.get(token)!;

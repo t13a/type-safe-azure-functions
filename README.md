@@ -35,7 +35,8 @@ packages/
 ├── api/
 │   ├── src/
 │   │   ├── lib/
-│   │   │   └── http.ts             # defineHttp + registerHttpAll + defaultMiddleware + types
+│   │   │   ├── http.ts             # defineHttp + registerHttpAll + defaultMiddleware + types
+│   │   │   └── http-utils.ts       # combineMiddleware
 │   │   ├── functions/
 │   │   │   ├── management/
 │   │   │   │   ├── show-stats.ts
@@ -109,7 +110,9 @@ export const createTodo = defineHttp({
 Each function can define its own middleware. Middleware wraps the handler and can short-circuit the request (e.g. return 401) or delegate to the handler via `next()`.
 
 ```typescript
+import type { HttpMiddleware } from "../lib/http.js";
 import { defaultMiddleware, defineHttp } from "../lib/http.js";
+import { combineMiddleware } from "../lib/http-utils.js";
 
 type User = { name: string };
 
@@ -117,20 +120,20 @@ const usersByToken = new Map<string, User>().set("my-secret-token", { name: "Joh
 
 const unauthorizedResponse = { status: 401, jsonBody: { message: "Unauthorized" } } as const;
 
+const requireAuth = (async (request, _context, next) => {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return unauthorizedResponse;
+  }
+  const user = usersByToken.get(authHeader.replace("Bearer ", ""));
+  if (!user) {
+    return unauthorizedResponse;
+  }
+  await next(request, _context);
+}) satisfies HttpMiddleware;
+
 export const authMe = defineHttp({
-  middleware: async (request, context, next) => {
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return unauthorizedResponse;
-    }
-
-    const user = usersByToken.get(authHeader.replace("Bearer ", ""));
-    if (!user) {
-      return unauthorizedResponse;
-    }
-
-    return await defaultMiddleware(request, context, next);
-  },
+  middleware: combineMiddleware([requireAuth, defaultMiddleware]),
   handler: async (request) => {
     const token = request.headers.get("authorization")!.replace("Bearer ", "");
     const user = usersByToken.get(token)!;
@@ -143,6 +146,7 @@ export const authMe = defineHttp({
 - Middleware can return its own response to short-circuit, or call `next(request, context)` to invoke the handler
 - Middleware cannot modify the handler's response (read-only) — return `void` or your own response
 - The middleware's return type is inferred and included in the client's response type union, so status code narrowing works for custom error shapes too
+- Use `combineMiddleware([...])` to compose multiple middlewares — they execute in order, and the combined response type is the union of all middlewares' return types
 
 ## Nested definition maps
 

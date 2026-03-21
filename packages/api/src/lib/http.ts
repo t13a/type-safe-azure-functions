@@ -18,12 +18,17 @@ export type ParsedHttpHandler<
   parsed: z.infer<TParser>,
 ) => Promise<TReturn>;
 
+export type HttpMiddlewareNext = (
+  request: HttpRequest,
+  context: InvocationContext
+) => Promise<HttpResponseInit>;
+
 export type HttpMiddleware<
   TReturn extends HttpResponseInit = HttpResponseInit,
 > = (
   request: HttpRequest,
   context: InvocationContext,
-  next: (request: HttpRequest, context: InvocationContext) => Promise<HttpResponseInit>,
+  next: HttpMiddlewareNext,
 ) => Promise<TReturn | void>;
 
 export interface HttpFunctionDefinition<
@@ -71,7 +76,7 @@ export function defineHttp<
     middleware?: (
       request: HttpRequest,
       context: InvocationContext,
-      next: (request: HttpRequest, context: InvocationContext) => Promise<HttpResponseInit>,
+      next: HttpMiddlewareNext,
     ) => Promise<TMiddlewareReturn>;
     parser?: TParser;
     handler: ParsedHttpHandler<TParser, TReturn>;
