@@ -9,16 +9,16 @@ import { z } from "zod";
 
 // Context propagation
 
-export type ContextKey<T> = symbol & { readonly _type: T };
+export type VariableKey<T> = symbol & { readonly _type: T };
 
-export function createContextKey<T>(description: string): ContextKey<T> {
-  return Symbol(description) as ContextKey<T>;
+export function createVariableKey<T>(description: string): VariableKey<T> {
+  return Symbol(description) as VariableKey<T>;
 }
 
 export interface Variables {
-  set<T>(key: ContextKey<T>, value: T): void;
-  get<T>(key: ContextKey<T>): T;
-  has(key: ContextKey<any>): boolean;
+  set<T>(key: VariableKey<T>, value: T): void;
+  get<T>(key: VariableKey<T>): T;
+  has(key: VariableKey<any>): boolean;
 }
 
 export function createVars(): Variables {

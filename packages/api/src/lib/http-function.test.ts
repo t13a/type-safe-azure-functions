@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   combineMiddleware,
-  createContextKey,
+  createVariableKey,
   createVars,
   defaultMiddleware,
   defineHttp,
@@ -55,16 +55,16 @@ function mockApp() {
 
 // Tests
 
-describe("createContextKey / createVars", () => {
+describe("createVariableKey / createVars", () => {
   it("stores and retrieves typed values", () => {
-    const key = createContextKey<{ name: string }>("user");
+    const key = createVariableKey<{ name: string }>("user");
     const vars = createVars();
     vars.set(key, { name: "Alice" });
     expect(vars.get(key)).toEqual({ name: "Alice" });
   });
 
   it("has() returns false before set, true after", () => {
-    const key = createContextKey<number>("count");
+    const key = createVariableKey<number>("count");
     const vars = createVars();
     expect(vars.has(key)).toBe(false);
     vars.set(key, 42);
@@ -72,7 +72,7 @@ describe("createContextKey / createVars", () => {
   });
 
   it("throws on get for unset key", () => {
-    const key = createContextKey<string>("missing");
+    const key = createVariableKey<string>("missing");
     const vars = createVars();
     expect(() => vars.get(key)).toThrow("Context key not set");
   });
@@ -193,7 +193,7 @@ describe("combineMiddleware", () => {
   });
 
   it("shares vars across middlewares", async () => {
-    const key = createContextKey<string>("role");
+    const key = createVariableKey<string>("role");
     const m1 = (async (c) => {
       c.vars.set(key, "admin");
       await c.next();
@@ -305,7 +305,7 @@ describe("handler integration", () => {
   });
 
   it("propagates vars from middleware to handler", async () => {
-    const key = createContextKey<string>("tenant");
+    const key = createVariableKey<string>("tenant");
     const setTenant = (async (c) => {
       c.vars.set(key, "acme");
       await c.next();

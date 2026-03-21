@@ -1,6 +1,6 @@
 import {
   combineMiddleware,
-  createContextKey,
+  createVariableKey,
   defaultMiddleware,
   defineHttp,
   HttpMiddleware,
@@ -17,7 +17,7 @@ const unauthorizedResponse = {
   jsonBody: { message: "Unauthorized" },
 } as const;
 
-export const userKey = createContextKey<User>("user");
+export const userKey = createVariableKey<User>("user");
 
 const requireAuth = (async (c) => {
   const authHeader = c.request.headers.get("authorization");
