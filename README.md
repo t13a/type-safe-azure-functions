@@ -1,8 +1,8 @@
 # Type-safe Azure Functions
 
-> If you can use [Hono](https://hono.dev/docs/guides/rpc), use Hono. This exists because some of us are not that fortunate.
+> If you can use Hono, use Hono. This exists because some of us are not that fortunate.
 
-Type-safe API communication for Azure Functions v4, inspired by Hono RPC and Astro Actions. Response types are inferred from handler implementations — no hand-written response schemas needed.
+Type-safe API communication for Azure Functions v4, inspired by [Hono RPC](https://hono.dev/docs/guides/rpc) and [Astro Actions](https://docs.astro.build/en/guides/actions/). Response types are inferred from handler implementations — no hand-written response schemas needed.
 
 ## How it works
 
@@ -34,24 +34,23 @@ This library trades full Azure Functions compatibility for simplicity. The follo
 packages/
 ├── api/
 │   ├── src/
-│   │   ├── lib/
-│   │   │   ├── http.ts             # defineHttp + registerHttpAll + defaultMiddleware + types
-│   │   │   └── http-utils.ts       # combineMiddleware
 │   │   ├── functions/
 │   │   │   ├── management/
-│   │   │   │   ├── show-stats.ts
-│   │   │   │   └── index.ts        # Nested definition map
+│   │   │   │   ├── index.ts        # Nested definition map
+│   │   │   │   └── show-stats.ts
 │   │   │   ├── auth-me.ts
 │   │   │   ├── create-todo.ts
 │   │   │   ├── index.ts            # Root definition map (shared by server and client)
 │   │   │   └── list-todos.ts
+│   │   ├── lib/
+│   │   │   └── http-function.ts    # Core functions, types
 │   │   ├── app.ts                  # Azure Functions entry point
 │   │   └── index.ts                # Re-exports definition map, types
 │   └── package.json
 └── client/                         # Usage example / integration tests
     └── src/
         ├── lib/
-        │   └── api.ts              # createClient (generic typed fetch wrapper)
+        │   └── http-function-client.ts  # Generic typed fetch wrapper
         └── example.test.ts
 ```
 
@@ -80,7 +79,7 @@ Use `defineHttp()` to declare a handler with its validation schema. The function
 
 ```typescript
 import { z } from "zod";
-import { defineHttp } from "../lib/http.js";
+import { defineHttp } from "../lib/http-function.js";
 
 export const createTodo = defineHttp({
   parser: z.object({
@@ -91,7 +90,7 @@ export const createTodo = defineHttp({
     context.log(`Creating todo: ${parsed.title}`);
 
     return {
-      jsonBody: {           // ← response type inferred from here
+      jsonBody: { // ← response type inferred from here
         id: crypto.randomUUID(),
         title: parsed.title,
         completed: parsed.completed,
@@ -110,15 +109,23 @@ export const createTodo = defineHttp({
 Each function can define its own middleware. Middleware wraps the handler and can short-circuit the request (e.g. return 401) or delegate to the handler via `next()`.
 
 ```typescript
-import type { HttpMiddleware } from "../lib/http.js";
-import { defaultMiddleware, defineHttp } from "../lib/http.js";
-import { combineMiddleware } from "../lib/http-utils.js";
+import {
+  combineMiddleware,
+  defaultMiddleware,
+  defineHttp,
+  HttpMiddleware,
+} from "../lib/http-function.js";
 
 type User = { name: string };
 
-const usersByToken = new Map<string, User>().set("my-secret-token", { name: "John Doe" });
+const usersByToken = new Map<string, User>().set("my-secret-token", {
+  name: "John Doe",
+});
 
-const unauthorizedResponse = { status: 401, jsonBody: { message: "Unauthorized" } } as const;
+const unauthorizedResponse = {
+  status: 401,
+  jsonBody: { message: "Unauthorized" },
+} as const;
 
 const requireAuth = (async (request, _context, next) => {
   const authHeader = request.headers.get("authorization");
@@ -173,7 +180,7 @@ const res = await client.management.showStats();
 Side effects are isolated to `app.ts`, the Azure Functions entry point:
 
 ```typescript
-import { registerHttpAll } from "./lib/http.js";
+import { registerHttpAll } from "./lib/http-function.js";
 import { defs } from "./functions/index.js";
 import { app } from "@azure/functions";
 
@@ -188,9 +195,9 @@ The client package takes `@my-app/api` as a `devDependency` — only type inform
 
 ```typescript
 import type { defs } from "@my-app/api";
-import { createClient } from "./lib/api.js";
+import { createHttpFunctionClient } from "./lib/http-function-client.js";
 
-const client = createClient<typeof defs>("http://localhost:7071");
+const client = createHttpFunctionClient<typeof defs>("http://localhost:7071");
 
 // Status code narrows the json() return type
 const res = await client.createTodo({ body: { title: "Buy milk" } });

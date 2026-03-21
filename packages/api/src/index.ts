@@ -1,2 +1,2 @@
-export type { HttpFunctionDefinition } from "./lib/http.js";
-export { defs } from "./functions/index.js";
+export type { HttpFunctionDefinition } from "./lib/http-function.js";
+export type { defs } from "./functions/index.js";

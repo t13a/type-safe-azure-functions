@@ -1,23 +1,17 @@
 import type { HttpFunctionDefinition } from "@my-app/api";
 import type { z } from "zod";
 
-type InferResponse<T> =
-  T extends HttpFunctionDefinition<any, infer R> ? R : never;
+type TypedResponse<T> =
+  T extends HttpFunctionDefinition<any, infer R>
+    ? R extends { status: infer S extends number; body: infer B; }
+      ? Omit<Response, "json"> & { status: S; json(): Promise<B> }
+      : never
+    : never;
 
-type TypedResponse<TResponse> = TResponse extends {
-  status: infer S extends number;
-  body: infer B;
-}
-  ? Omit<Response, "json"> & { status: S; json(): Promise<B> }
-  : never;
-
-type ClientMethod<T> = T extends HttpFunctionDefinition<
-  infer P,
-  any
->
+type HttpFunctionClientMethod<T> = T extends HttpFunctionDefinition<infer P, any>
   ? P extends z.ZodTypeAny
-    ? (input: { body: z.input<P>; headers?: HeadersInit }) => Promise<TypedResponse<InferResponse<T>>>
-    : (input?: { headers?: HeadersInit }) => Promise<TypedResponse<InferResponse<T>>>
+    ? (input: { body: z.input<P>; headers?: HeadersInit }) => Promise<TypedResponse<T>>
+    : (input?: { headers?: HeadersInit }) => Promise<TypedResponse<T>>
   : never;
 
 function normalizeHeaders(init?: HeadersInit): Record<string, string> {
@@ -27,18 +21,18 @@ function normalizeHeaders(init?: HeadersInit): Record<string, string> {
   return init;
 }
 
-type Client<T> = {
+type HttpFunctionClient<T> = {
   [K in keyof T]: T[K] extends HttpFunctionDefinition<any, any>
-    ? ClientMethod<T[K]>
+    ? HttpFunctionClientMethod<T[K]>
     : T[K] extends Record<string, any>
-      ? Client<T[K]>
+      ? HttpFunctionClient<T[K]>
       : never;
 };
 
-export function createClient<
+export function createHttpFunctionClient<
   T extends Record<string, any>,
->(baseUrl: string, pathPrefix = ""): Client<T> {
-  return new Proxy({} as Client<T>, {
+>(baseUrl: string, pathPrefix = ""): HttpFunctionClient<T> {
+  return new Proxy({} as HttpFunctionClient<T>, {
     get(_, prop: string | symbol) {
       if (typeof prop !== "string") return undefined;
       if (prop === "then") return undefined;
@@ -59,7 +53,7 @@ export function createClient<
         get(target, innerProp: string | symbol) {
           if (typeof innerProp !== "string") return Reflect.get(target, innerProp);
           if (innerProp === "then") return undefined;
-          return (createClient as any)(baseUrl, path)[innerProp];
+          return createHttpFunctionClient(baseUrl, path)[innerProp];
         },
       });
     },

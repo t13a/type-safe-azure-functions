@@ -1,12 +1,20 @@
-import type { HttpMiddleware } from "../lib/http.js";
-import { defaultMiddleware, defineHttp } from "../lib/http.js";
-import { combineMiddleware } from "../lib/http-utils.js";
+import {
+  combineMiddleware,
+  defaultMiddleware,
+  defineHttp,
+  HttpMiddleware,
+} from "../lib/http-function.js";
 
 type User = { name: string };
 
-const usersByToken = new Map<string, User>().set("my-secret-token", { name: "John Doe"});
+const usersByToken = new Map<string, User>().set("my-secret-token", {
+  name: "John Doe",
+});
 
-const unauthorizedResponse = { status: 401, jsonBody: { message: "Unauthorized" } } as const;
+const unauthorizedResponse = {
+  status: 401,
+  jsonBody: { message: "Unauthorized" },
+} as const;
 
 const requireAuth = (async (request, _context, next) => {
   const authHeader = request.headers.get("authorization");

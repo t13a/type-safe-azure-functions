@@ -1,4 +1,4 @@
-import { defineHttp } from "../../lib/http.js";
+import { defineHttp } from "../../lib/http-function.js";
 
 export const showStats = defineHttp({
   handler: async () => {

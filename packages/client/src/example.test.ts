@@ -1,8 +1,8 @@
 import type { defs } from "@my-app/api";
-import { createClient } from "./lib/api.js";
+import { createHttpFunctionClient } from "./lib/http-function-client.js";
 import { describe, expect, it } from "vitest";
 
-const client = createClient<typeof defs>("http://localhost:7071");
+const client = createHttpFunctionClient<typeof defs>("http://localhost:7071");
 
 describe("todo API", () => {
   it("list all todos", async () => {
