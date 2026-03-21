@@ -18,15 +18,6 @@ export type ParsedHttpHandler<
   parsed: z.infer<TParser>,
 ) => Promise<TReturn>;
 
-export type HttpErrorHandler<
-  TError = unknown,
-  TErrorReturn extends HttpResponseInit = HttpResponseInit
-> = (
-  request: HttpRequest,
-  context: InvocationContext,
-  error: TError,
-) => Promise<TErrorReturn>;
-
 export interface HttpFunctionDefinition<
   TParser extends z.ZodTypeAny | undefined,
   TResponse,
@@ -34,7 +25,6 @@ export interface HttpFunctionDefinition<
   options: Omit<HttpFunctionOptions, "handler" | "methods" | "route">;
   parser: TParser;
   handler: ParsedHttpHandler<TParser extends z.ZodTypeAny ? TParser : z.ZodVoid>;
-  errorHandler: HttpErrorHandler;
   [ResponseType]: TResponse;
 }
 
@@ -50,32 +40,25 @@ type ExtractResponse<T> = T extends any
   ? { status: ExtractStatus<T>; body: ExtractBody<T> }
   : never;
 
-export const defaultErrorHandler = (async (_request, context, error) => {
-  if (error instanceof z.ZodError) {
-    return { status: 400, jsonBody: { message: "Bad Request", errors: error.flatten() } } as const;
-  }
-  context.error("Internal Server Error", error);
-  return { status: 500, jsonBody: { message: "Internal Server Error" } } as const;
-}) satisfies HttpErrorHandler;
+type DefaultErrorResponse =
+  | { status: 400; body: { message: string; errors: z.typeToFlattenedError<any> } }
+  | { status: 500; body: { message: string } };
 
 export function defineHttp<
   const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,
   TParser extends z.ZodTypeAny = z.ZodVoid,
   TReturn extends HttpResponseInit = HttpResponseInit,
-  TErrorReturn extends HttpResponseInit = Awaited<ReturnType<typeof defaultErrorHandler>>,
 >(
   options: TOptions & {
     parser?: TParser;
     handler: ParsedHttpHandler<TParser, TReturn>;
-    errorHandler?: HttpErrorHandler<unknown, TErrorReturn>;
   },
-): HttpFunctionDefinition<TParser extends z.ZodVoid ? undefined : TParser, ExtractResponse<TReturn | TErrorReturn>> {
-  const { handler, errorHandler, parser, ...rest } = options as any;
+): HttpFunctionDefinition<TParser extends z.ZodVoid ? undefined : TParser, ExtractResponse<TReturn> | DefaultErrorResponse> {
+  const { handler, parser, ...rest } = options as any;
   return {
     options: rest,
     parser: parser ?? undefined,
     handler,
-    errorHandler: errorHandler ?? defaultErrorHandler,
   } as any;
 }
 
@@ -107,7 +90,11 @@ export function registerHttp(
 
         return await def.handler(request, context, parsed as any);
       } catch (error) {
-        return await def.errorHandler(request, context, error);
+        if (error instanceof z.ZodError) {
+          return { status: 400, jsonBody: { message: "Bad Request", errors: error.flatten() } };
+        }
+        context.error("Internal Server Error", error);
+        return { status: 500, jsonBody: { message: "Internal Server Error" } };
       }
     },
   });
