@@ -88,8 +88,8 @@ describe("defineHttp", () => {
   });
 
   it("stores custom middleware", () => {
-    const custom = (async (_req, _ctx, next, _locals) => {
-      await next(_req, _ctx);
+    const custom = (async ({ next }) => {
+      await next();
     }) satisfies HttpMiddleware;
 
     const def = defineHttp({
@@ -103,7 +103,7 @@ describe("defineHttp", () => {
     const schema = z.object({ x: z.number() });
     const def = defineHttp({
       parser: schema,
-      handler: async (_req, _ctx, parsed) => ({ jsonBody: parsed }),
+      handler: async ({ parsed }) => ({ jsonBody: parsed }),
     });
     expect(def.parser).toBe(schema);
   });
@@ -114,7 +114,7 @@ describe("defaultMiddleware", () => {
     const expected = { jsonBody: { ok: true } };
     const next: HttpMiddlewareNext = async () => expected;
     const locals = createLocals();
-    const result = await defaultMiddleware(mockRequest(), mockContext(), next, locals);
+    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), next, locals });
     // defaultMiddleware returns void on success (result comes via side-channel)
     expect(result).toBeUndefined();
   });
@@ -126,7 +126,7 @@ describe("defaultMiddleware", () => {
       return {};
     };
     const locals = createLocals();
-    const result = await defaultMiddleware(mockRequest(), mockContext(), next, locals);
+    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), next, locals });
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
     expect((result as any).jsonBody.error).toBeDefined();
   });
@@ -136,7 +136,7 @@ describe("defaultMiddleware", () => {
       throw new SyntaxError("Unexpected token");
     };
     const locals = createLocals();
-    const result = await defaultMiddleware(mockRequest(), mockContext(), next, locals);
+    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), next, locals });
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 
@@ -146,7 +146,7 @@ describe("defaultMiddleware", () => {
     };
     const ctx = mockContext();
     const locals = createLocals();
-    const result = await defaultMiddleware(mockRequest(), ctx, next, locals);
+    const result = await defaultMiddleware({ request: mockRequest(), context: ctx, next, locals });
     expect(result).toMatchObject({ status: 500, jsonBody: { message: "Internal Server Error" } });
     expect(ctx.error).toHaveBeenCalled();
   });
@@ -155,13 +155,13 @@ describe("defaultMiddleware", () => {
 describe("combineMiddleware", () => {
   it("executes middlewares in order and calls next", async () => {
     const order: number[] = [];
-    const m1 = (async (_req, _ctx, next, _locals) => {
+    const m1 = (async ({ next }) => {
       order.push(1);
-      await next(_req, _ctx);
+      await next();
     }) satisfies HttpMiddleware;
-    const m2 = (async (_req, _ctx, next, _locals) => {
+    const m2 = (async ({ next }) => {
       order.push(2);
-      await next(_req, _ctx);
+      await next();
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([m1, m2]);
@@ -170,43 +170,43 @@ describe("combineMiddleware", () => {
       order.push(3);
       return { jsonBody: "done" };
     };
-    await combined(mockRequest(), mockContext(), next, locals);
+    await combined({ request: mockRequest(), context: mockContext(), next, locals });
     expect(order).toEqual([1, 2, 3]);
   });
 
   it("short-circuits when middleware returns a response", async () => {
-    const blocker = (async (_req, _ctx, _next, _locals) => {
+    const blocker = (async (_c) => {
       return { status: 403 as const, jsonBody: { message: "Forbidden" } };
     }) satisfies HttpMiddleware;
     const shouldNotRun = vi.fn();
-    const m2 = (async (_req, _ctx, next, _locals) => {
+    const m2 = (async ({ next }) => {
       shouldNotRun();
-      await next(_req, _ctx);
+      await next();
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([blocker, m2]);
     const locals = createLocals();
     const next: HttpMiddlewareNext = async () => ({ jsonBody: "should not reach" });
-    const result = await combined(mockRequest(), mockContext(), next, locals);
+    const result = await combined({ request: mockRequest(), context: mockContext(), next, locals });
     expect(result).toMatchObject({ status: 403 });
     expect(shouldNotRun).not.toHaveBeenCalled();
   });
 
   it("shares locals across middlewares", async () => {
     const key = createContextKey<string>("role");
-    const m1 = (async (_req, _ctx, next, locals) => {
+    const m1 = (async ({ next, locals }) => {
       locals.set(key, "admin");
-      await next(_req, _ctx);
+      await next();
     }) satisfies HttpMiddleware;
-    const m2 = (async (_req, _ctx, next, locals) => {
+    const m2 = (async ({ next, locals }) => {
       expect(locals.get(key)).toBe("admin");
-      await next(_req, _ctx);
+      await next();
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([m1, m2]);
     const locals = createLocals();
     const next: HttpMiddlewareNext = async () => ({ jsonBody: "ok" });
-    await combined(mockRequest(), mockContext(), next, locals);
+    await combined({ request: mockRequest(), context: mockContext(), next, locals });
   });
 });
 
@@ -254,7 +254,7 @@ describe("handler integration", () => {
     const { app, registered } = mockApp();
     const def = defineHttp({
       parser: z.object({ name: z.string() }),
-      handler: async (_req, _ctx, parsed) => ({
+      handler: async ({ parsed }) => ({
         jsonBody: { greeting: `Hello ${parsed.name}` },
       }),
     });
@@ -281,7 +281,7 @@ describe("handler integration", () => {
     const { app, registered } = mockApp();
     const def = defineHttp({
       parser: z.object({ count: z.number() }),
-      handler: async (_req, _ctx, parsed) => ({ jsonBody: parsed }),
+      handler: async ({ parsed }) => ({ jsonBody: parsed }),
     });
 
     registerHttpAll(app, { nums: def });
@@ -294,7 +294,7 @@ describe("handler integration", () => {
     const { app, registered } = mockApp();
     const def = defineHttp({
       parser: z.object({ x: z.number() }),
-      handler: async (_req, _ctx, parsed) => ({ jsonBody: parsed }),
+      handler: async ({ parsed }) => ({ jsonBody: parsed }),
     });
 
     registerHttpAll(app, { parse: def });
@@ -306,15 +306,15 @@ describe("handler integration", () => {
 
   it("propagates locals from middleware to handler", async () => {
     const key = createContextKey<string>("tenant");
-    const setTenant = (async (_req, _ctx, next, locals) => {
+    const setTenant = (async ({ next, locals }) => {
       locals.set(key, "acme");
-      await next(_req, _ctx);
+      await next();
     }) satisfies HttpMiddleware;
 
     const { app, registered } = mockApp();
     const def = defineHttp({
       middleware: combineMiddleware([setTenant, defaultMiddleware]),
-      handler: async (_req, _ctx, _parsed, locals) => ({
+      handler: async ({ locals }) => ({
         jsonBody: { tenant: locals.get(key) },
       }),
     });
@@ -327,7 +327,7 @@ describe("handler integration", () => {
 
   it("returns middleware error response without calling handler", async () => {
     const handlerSpy = vi.fn();
-    const blocker = (async (_req, _ctx, _next, _locals) => {
+    const blocker = (async (_c) => {
       return { status: 401 as const, jsonBody: { message: "No" } };
     }) satisfies HttpMiddleware;
 

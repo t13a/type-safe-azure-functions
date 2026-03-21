@@ -6,7 +6,7 @@ export const createTodo = defineHttp({
     title: z.string().min(1),
     completed: z.boolean().optional().default(false),
   }),
-  handler: async (_request, context, parsed) => {
+  handler: async ({ context, parsed }) => {
     context.log(`Creating todo: ${parsed.title}`);
 
     return {

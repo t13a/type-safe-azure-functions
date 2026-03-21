@@ -35,23 +35,22 @@ export function createLocals(): Locals {
 
 // Middleware
 
-export type HttpMiddlewareNext = (
-  request: HttpRequest,
-  context: InvocationContext
-) => Promise<HttpResponseInit>;
+export type HttpMiddlewareNext = () => Promise<HttpResponseInit>;
+
+export interface HttpMiddlewareContext {
+  request: HttpRequest;
+  context: InvocationContext;
+  next: HttpMiddlewareNext;
+  locals: Locals;
+}
 
 export type HttpMiddleware<
   TReturn extends HttpResponseInit = HttpResponseInit,
-> = (
-  request: HttpRequest,
-  context: InvocationContext,
-  next: HttpMiddlewareNext,
-  locals: Locals,
-) => Promise<TReturn | void>;
+> = (c: HttpMiddlewareContext) => Promise<TReturn | void>;
 
-export const defaultMiddleware = (async (request, context, next, _locals) => {
+export const defaultMiddleware = (async ({ next, context }) => {
   try {
-    await next(request, context);
+    await next();
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { status: 400, jsonBody: { message: "Bad Request", error: error.flatten() } } as const;
@@ -66,15 +65,17 @@ export const defaultMiddleware = (async (request, context, next, _locals) => {
 
 // Handler
 
+export interface HttpHandlerContext<TParsed = void> {
+  request: HttpRequest;
+  context: InvocationContext;
+  parsed: TParsed;
+  locals: Locals;
+}
+
 export type ParsedHttpHandler<
   TParser extends z.ZodTypeAny = z.ZodVoid,
   TReturn extends HttpResponseInit = HttpResponseInit
-> = (
-  request: HttpRequest,
-  context: InvocationContext,
-  parsed: z.infer<TParser>,
-  locals: Locals,
-) => Promise<TReturn>;
+> = (c: HttpHandlerContext<z.infer<TParser>>) => Promise<TReturn>;
 
 // Definition
 
@@ -116,12 +117,7 @@ export function defineHttp<
   TMiddlewareReturn = Awaited<ReturnType<typeof defaultMiddleware>> | void,
 >(
   options: TOptions & {
-    middleware?: (
-      request: HttpRequest,
-      context: InvocationContext,
-      next: HttpMiddlewareNext,
-      locals: Locals,
-    ) => Promise<TMiddlewareReturn>;
+    middleware?: (c: HttpMiddlewareContext) => Promise<TMiddlewareReturn>;
     parser?: TParser;
     handler: ParsedHttpHandler<TParser, TReturn>;
   },
@@ -154,16 +150,16 @@ function registerHttp(
     ): Promise<HttpResponseInit> => {
       const locals = createLocals();
       let handlerResult: HttpResponseInit | undefined;
-      const next = async (req: HttpRequest, ctx: InvocationContext) => {
+      const next: HttpMiddlewareNext = async () => {
         let parsed: unknown = undefined;
         if (def.parser) {
-          const raw = await req.json();
+          const raw = await request.json();
           parsed = def.parser.parse(raw);
         }
-        handlerResult = await def.handler(req, ctx, parsed as any, locals);
+        handlerResult = await def.handler({ request, context, parsed: parsed as any, locals });
         return handlerResult;
       };
-      const middlewareResult = await def.middleware(request, context, next, locals);
+      const middlewareResult = await def.middleware({ request, context, next, locals });
       return middlewareResult ?? handlerResult!;
     },
   });
@@ -200,18 +196,18 @@ type ExtractMiddlewareReturn<T> =
 export function combineMiddleware<const T extends readonly HttpMiddleware<any>[]>(
   middlewares: [...T],
 ): HttpMiddleware<ExtractMiddlewareReturn<T[number]>> {
-  return ((request, context, next, locals) => {
+  return (({ request, context, next, locals }) => {
     const dispatch = (i: number): HttpMiddlewareNext =>
-      async (req, ctx) => {
-        if (i >= middlewares.length) return next(req, ctx);
+      async () => {
+        if (i >= middlewares.length) return next();
         let nextResult: HttpResponseInit | undefined;
-        const innerNext: HttpMiddlewareNext = async (r, c) => {
-          nextResult = await dispatch(i + 1)(r, c);
+        const innerNext: HttpMiddlewareNext = async () => {
+          nextResult = await dispatch(i + 1)();
           return nextResult;
         };
-        const middlewareResult = await middlewares[i](req, ctx, innerNext, locals);
+        const middlewareResult = await middlewares[i]({ request, context, next: innerNext, locals });
         return (middlewareResult ?? nextResult)!;
       };
-    return dispatch(0)(request, context);
+    return dispatch(0)();
   }) as HttpMiddleware<ExtractMiddlewareReturn<T[number]>>;
 }
