@@ -7,9 +7,9 @@ Type-safe API communication for Azure Functions v4, inspired by Hono RPC and Ast
 ## How it works
 
 ```
-defineHttp()              →  Handler + validation in one place (no side effects)
+defineHttp()              →  Handler + middleware + validation in one place (no side effects)
   ↓
-registerHttp(app, ...)    →  Registers with app.http() at startup
+registerHttpAll(app, ...) →  Registers with app.http() at startup (path-based routing from definition tree)
   ↓
 createClient(baseUrl)     →  Typed client, response types flow automatically
 ```
@@ -23,7 +23,7 @@ This library trades full Azure Functions compatibility for simplicity. The follo
 | Constraint | Value |
 |---|---|
 | HTTP method | Always `POST` |
-| Route | `/api/{functionName}` (function name as-is) |
+| Route | `/api/{path}` (derived from definition tree keys) |
 | Request format | JSON body + HTTP headers (no URL path/query params) |
 
 `methods` and `route` are excluded from `defineHttp` options — specifying them is a compile error. If you need custom routing or other HTTP methods, use `app.http()` directly.
@@ -35,14 +35,17 @@ packages/
 ├── api/
 │   ├── src/
 │   │   ├── lib/
-│   │   │   └── http.ts             # defineHttp + registerHttp + defaultErrorHandler + types
+│   │   │   └── http.ts             # defineHttp + registerHttpAll + defaultMiddleware + types
 │   │   ├── functions/
+│   │   │   ├── management/
+│   │   │   │   ├── show-stats.ts
+│   │   │   │   └── index.ts        # Nested definition map
 │   │   │   ├── auth-me.ts
 │   │   │   ├── create-todo.ts
-│   │   │   ├── index.ts            # Definition map (shared by server and client)
+│   │   │   ├── index.ts            # Root definition map (shared by server and client)
 │   │   │   └── list-todos.ts
 │   │   ├── app.ts                  # Azure Functions entry point
-│   │   └── index.ts                # Re-exports HttpFunctionDefinition, defs map
+│   │   └── index.ts                # Re-exports definition map, types
 │   └── package.json
 └── client/                         # Usage example / integration tests
     └── src/
@@ -55,8 +58,7 @@ packages/
 
 ```bash
 npm install
-npx tsc --build
-cd packages/api && func start
+cd packages/api && npm run build && npm run start
 ```
 
 ## Running tests
@@ -65,8 +67,7 @@ Tests run against a live Azure Functions instance. Start the server first, then 
 
 ```bash
 # terminal 1
-npx tsc --build
-cd packages/api && func start
+cd packages/api && npm run build && npm run start
 
 # terminal 2
 cd packages/client && npm test
@@ -81,121 +82,101 @@ import { z } from "zod";
 import { defineHttp } from "../lib/http.js";
 
 export const createTodo = defineHttp({
-  parser: {
-    body: z.object({
-      title: z.string().min(1),
-      completed: z.boolean().optional().default(false),
-    }),
-    // parser.body is optional — omit for endpoints that take no input
-    // parser.headers is also available — see "Header validation" below
-  },
-  handler: async (_request, context, { body }) => {
-    context.log(`Creating todo: ${body.title}`);
+  parser: z.object({
+    title: z.string().min(1),
+    completed: z.boolean().optional().default(false),
+  }),
+  handler: async (_request, context, parsed) => {
+    context.log(`Creating todo: ${parsed.title}`);
 
     return {
       jsonBody: {           // ← response type inferred from here
         id: crypto.randomUUID(),
-        title: body.title,
-        completed: body.completed,
+        title: parsed.title,
+        completed: parsed.completed,
       },
     };
   },
 });
 ```
 
-The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler` — those are controlled by the framework. `authLevel`, `retry`, and other options work as-is.
+- `parser` takes a Zod schema directly — the parsed result is passed as the handler's third argument
+- When omitted, the handler receives no parsed data (typed as `void`)
+- The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler` — those are controlled by the framework. `authLevel`, `retry`, and other options work as-is.
 
-## Header validation
+## Middleware
 
-Use `parser.headers` to validate HTTP headers with a Zod schema. The parsed result is available as `parsed.headers` in the handler, fully typed.
+Each function can define its own middleware. Middleware wraps the handler and can short-circuit the request (e.g. return 401) or delegate to the handler via `next()`.
 
 ```typescript
-import { z } from "zod";
-import { defaultErrorHandler, defineHttp } from "../lib/http";
+import { defaultMiddleware, defineHttp } from "../lib/http.js";
 
 type User = { name: string };
 
-const usersByToken = new Map<string, User>().set("my-secret-token", { name: "John Doe"});
+const usersByToken = new Map<string, User>().set("my-secret-token", { name: "John Doe" });
 
-const unauthorizedErrorHandler = () => {
-  return { status: 401 as const, jsonBody: { message: "Unauthorized" } } as const;
-};
+const unauthorizedResponse = { status: 401, jsonBody: { message: "Unauthorized" } } as const;
 
 export const authMe = defineHttp({
-  parser: {
-    headers: z.object({
-      authorization: z.string().regex(/^Bearer .+$/).transform((arg) => {
-        return { token: arg.replace("Bearer ", "") };
-      }),
-    }),
-  },
-  handler: async (_request, context, { headers }) => {
-    context.log(`Authenticating token: ${headers.authorization.token}`);
-
-    const token = headers.authorization.token;
-    const user = usersByToken.get(token);
-
-    if (!user) {
-      return unauthorizedErrorHandler();
+  middleware: async (request, context, next) => {
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return unauthorizedResponse;
     }
 
+    const user = usersByToken.get(authHeader.replace("Bearer ", ""));
+    if (!user) {
+      return unauthorizedResponse;
+    }
+
+    return await defaultMiddleware(request, context, next);
+  },
+  handler: async (request) => {
+    const token = request.headers.get("authorization")!.replace("Bearer ", "");
+    const user = usersByToken.get(token)!;
     return { status: 200, jsonBody: user } as const;
   },
-  errorHandler: async (request, context, error) => {
-    if (!request.headers.has("authorization")) {
-      return unauthorizedErrorHandler();
-    }
-
-    return defaultErrorHandler(request, context, error);
-  },
 });
 ```
 
-- `parser.headers` is optional — omit it for endpoints that don't need header validation
-- When omitted, `parsed.headers` is absent from the handler's third argument (not `undefined`, absent)
-- `parser.body` and `parser.headers` can be combined — both are validated in the same request
+- When `middleware` is omitted, `defaultMiddleware` is used (returns 400 for `ZodError`, 500 for unhandled exceptions)
+- Middleware can return its own response to short-circuit, or call `next(request, context)` to invoke the handler
+- Middleware cannot modify the handler's response (read-only) — return `void` or your own response
+- The middleware's return type is inferred and included in the client's response type union, so status code narrowing works for custom error shapes too
 
-## Error handling
+## Nested definition maps
 
-By default, validation errors return 400 and unhandled exceptions return 500. You can override this per-function with `errorHandler`:
+Definition maps can be nested to create path-based routing. `registerHttpAll` traverses the tree and generates routes from the key hierarchy:
 
 ```typescript
-import { defaultErrorHandler, defineHttp } from "../lib/http";
+// functions/management/index.ts
+import { showStats } from "./show-stats.js";
+export const defs = { showStats } as const;
 
-export const authMe = defineHttp({
-  parser: { /* ... */ },
-  handler: async (request, context, parsed) => { /* ... */ },
-  errorHandler: async (request, context, error) => {
-    // Return 401 instead of 400 when the Authorization header is missing
-    if (!request.headers.has("authorization")) {
-      return { status: 401 as const, jsonBody: { message: "Unauthorized" } } as const;
-    }
-
-    // Fall back to the default behavior for other errors
-    return defaultErrorHandler(request, context, error);
-  },
-});
+// functions/index.ts
+import { defs as management } from "./management/index.js";
+export const defs = { management, listTodos, createTodo, authMe } as const;
 ```
 
-- `errorHandler` receives `request`, `context`, and `error` — must return a `Promise`
-- When omitted, `defaultErrorHandler` is used (400 for `ZodError`, 500 for everything else)
-- The error handler's return type is inferred and included in the client's response type union, so status code narrowing works for custom error shapes too
+This registers `showStats` at `/api/management/showStats`. The client mirrors the same structure:
+
+```typescript
+const res = await client.management.showStats();
+```
 
 ## Registering functions
 
 Side effects are isolated to `app.ts`, the Azure Functions entry point:
 
 ```typescript
-import { registerHttp } from "./lib/http.js";
+import { registerHttpAll } from "./lib/http.js";
 import { defs } from "./functions/index.js";
 import { app } from "@azure/functions";
 
-for (const [name, def] of Object.entries(defs)) {
-  registerHttp(app, name, def);
-}
+registerHttpAll(app, defs);
 ```
 
-`registerHttp` takes the `app` instance as its first argument, keeping the module itself side-effect free. The definition map in `functions/index.ts` is shared between server registration and the client.
+`registerHttpAll` takes the `app` instance as its first argument, keeping the module itself side-effect free. The definition map in `functions/index.ts` is shared between server registration and the client.
 
 ## Client usage
 
@@ -206,11 +187,6 @@ import type { defs } from "@my-app/api";
 import { createClient } from "./lib/api.js";
 
 const client = createClient<typeof defs>("http://localhost:7071");
-
-// Custom headers can be passed to any endpoint
-const authRes = await client.authMe({
-  headers: { authorization: "Bearer my-token" },
-});
 
 // Status code narrows the json() return type
 const res = await client.createTodo({ body: { title: "Buy milk" } });
@@ -225,21 +201,20 @@ if (res.status === 200) {
   // err: { message: string }
 }
 
-// Custom errorHandler shapes are also narrowed
-const authRes2 = await client.authMe({
-  headers: { authorization: "Bearer my-token" },
+// Middleware return types are also narrowed
+const authRes = await client.authMe({
+  headers: { authorization: "Bearer my-secret-token" },
 });
-if (authRes2.status === 200) {
-  const user = await authRes2.json();
+if (authRes.status === 200) {
+  const user = await authRes.json();
   // user: { name: string }
-} else {
-  // status: 401
-  const err = await authRes2.json();
+} else if (authRes.status === 401) {
+  const err = await authRes.json();
   // err: { message: string }
 }
 ```
 
-The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Error response shapes are inferred from the server's `errorHandler` (or `defaultErrorHandler` when omitted), so custom error types flow to the client automatically.
+The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Error response shapes are inferred from the server's middleware (or `defaultMiddleware` when omitted), so custom error types flow to the client automatically.
 
 Headers are passed as `HeadersInit` (the standard fetch type) — `Record<string, string>`, `Headers`, or `string[][]` all work. User-provided headers are merged with the default `Content-Type: application/json`, and user values take precedence.
 
