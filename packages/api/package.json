@@ -10,7 +10,9 @@
     }
   },
   "scripts": {
+    "dev": "concurrently --raw npm:watch npm:start",
     "build": "tsc",
+    "watch": "tsc -w",
     "start": "func start",
     "test": "vitest run"
   },
@@ -19,6 +21,7 @@
     "zod": "^3.24"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "typescript": "^5.7",
     "vitest": "^4.1.0"
   }

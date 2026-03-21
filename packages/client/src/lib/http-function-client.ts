@@ -14,13 +14,6 @@ type HttpFunctionClientMethod<T> = T extends HttpFunctionDefinition<infer P, any
     : (input?: { headers?: HeadersInit }) => Promise<TypedResponse<T>>
   : never;
 
-function normalizeHeaders(init?: HeadersInit): Record<string, string> {
-  if (!init) return {};
-  if (init instanceof Headers) return Object.fromEntries(init.entries());
-  if (Array.isArray(init)) return Object.fromEntries(init);
-  return init;
-}
-
 type HttpFunctionClient<T> = {
   [K in keyof T]: T[K] extends HttpFunctionDefinition<any, any>
     ? HttpFunctionClientMethod<T[K]>
@@ -28,6 +21,13 @@ type HttpFunctionClient<T> = {
       ? HttpFunctionClient<T[K]>
       : never;
 };
+
+function normalizeHeaders(init?: HeadersInit): Record<string, string> {
+  if (!init) return {};
+  if (init instanceof Headers) return Object.fromEntries(init.entries());
+  if (Array.isArray(init)) return Object.fromEntries(init);
+  return init;
+}
 
 export function createHttpFunctionClient<
   T extends Record<string, any>,

@@ -1,5 +1,10 @@
 {
   "private": true,
+  "scripts": {
+    "dev": "npm run dev -w packages/api",
+    "build": "npm run build -w packages/api",
+    "test": "npm run test --workspaces"
+  },
   "workspaces": [
     "packages/api",
     "packages/client"

@@ -36,41 +36,49 @@ packages/
 │   ├── src/
 │   │   ├── functions/
 │   │   │   ├── management/
-│   │   │   │   ├── index.ts        # Nested definition map
+│   │   │   │   ├── index.ts              # Nested definition map
 │   │   │   │   └── show-stats.ts
 │   │   │   ├── auth-me.ts
 │   │   │   ├── create-todo.ts
-│   │   │   ├── index.ts            # Root definition map (shared by server and client)
+│   │   │   ├── index.ts                  # Root definition map (shared by server and client)
 │   │   │   └── list-todos.ts
 │   │   ├── lib/
-│   │   │   └── http-function.ts    # Core functions, types
-│   │   ├── app.ts                  # Azure Functions entry point
-│   │   └── index.ts                # Re-exports definition map, types
+│   │   │   └── http-function.ts          # Core functions, utilities, types
+│   │   │   └── http-function.test.ts
+│   │   ├── app.ts                        # Azure Functions entry point
+│   │   └── index.ts                      # Re-exports definition map, types
 │   └── package.json
-└── client/                         # Usage example / integration tests
-    └── src/
-        ├── lib/
-        │   └── http-function-client.ts  # Generic typed fetch wrapper
-        └── example.test.ts
+└── client/                               # Usage example / integration tests
+    ├── src/
+    │   ├── lib/
+    │   │   └── http-function-client.ts  # Generic typed fetch wrapper
+    │   └── example.test.ts
+    └── package.json
+package.json
 ```
+
+## Prerequisites
+
+- Node.js 22
+- Azure Functions Core Tools v4 (`npm install -g azure-functions-core-tools@4`)
 
 ## Quick start
 
 ```bash
 npm install
-cd packages/api && npm run build && npm run start
+npm run dev
 ```
 
 ## Running tests
 
-Tests run against a live Azure Functions instance. Start the server first, then run:
+All tests run against the live Azure Functions instance. Start the server first, then run:
 
 ```bash
 # terminal 1
-cd packages/api && npm run build && npm run start
+npm run dev
 
 # terminal 2
-cd packages/client && npm test
+npm test
 ```
 
 ## Defining functions
@@ -253,8 +261,3 @@ The response type is inferred from what you return. The status code defaults to 
 **Hono RPC** — Great, but [hono-azurefunc-adapter](https://github.com/Marplex/hono-azurefunc-adapter) can't pass `InvocationContext` to handlers.
 
 **This** — ~200 lines of application code. No framework, just a pattern.
-
-## Prerequisites
-
-- Node.js 18 / 20 / 22
-- Azure Functions Core Tools v4 (`npm install -g azure-functions-core-tools@4`)

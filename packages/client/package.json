@@ -8,7 +8,7 @@
   "devDependencies": {
     "@my-app/api": "*",
     "typescript": "^5.7",
-    "vitest": "^3.0",
+    "vitest": "^4.1.0",
     "zod": "^3.24"
   }
 }
