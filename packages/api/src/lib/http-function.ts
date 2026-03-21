@@ -7,8 +7,6 @@ import {
 } from "@azure/functions";
 import { z } from "zod";
 
-declare const ResponseType: unique symbol;
-
 // Context propagation
 
 export type ContextKey<T> = symbol & { readonly _type: T };
@@ -80,15 +78,24 @@ export type ParsedHttpHandler<
 
 // Definition
 
+const HttpFunctionDefinitionBrand = Symbol("HttpFunctionDefinition");
+
+declare const ResponseType: unique symbol;
+
 export interface HttpFunctionDefinition<
   TParser extends z.ZodTypeAny | undefined,
   TResponse,
 > {
+  readonly [HttpFunctionDefinitionBrand]: true;
   options: Omit<HttpFunctionOptions, "handler" | "methods" | "route">;
   middleware: HttpMiddleware;
   parser: TParser;
   handler: ParsedHttpHandler<TParser extends z.ZodTypeAny ? TParser : z.ZodVoid>;
   [ResponseType]: TResponse;
+}
+
+function isHttpFunctionDefinition(value: unknown): value is HttpFunctionDefinition<any, any> {
+  return typeof value === "object" && value !== null && HttpFunctionDefinitionBrand in value;
 }
 
 type ExtractResponse<T> = T extends any
@@ -124,6 +131,7 @@ export function defineHttp<
 > {
   const { handler, middleware, parser, ...rest } = options as any;
   return {
+    [HttpFunctionDefinitionBrand]: true,
     options: rest,
     middleware: middleware ?? defaultMiddleware,
     parser: parser ?? undefined,
@@ -165,10 +173,6 @@ export interface HttpFunctionDefinitionTree {
   [key: string]: HttpFunctionDefinition<any, any> | HttpFunctionDefinitionTree;
 };
 
-function isDefinition(value: unknown): value is HttpFunctionDefinition<any, any> {
-  return typeof value === "object" && value !== null && "handler" in value;
-}
-
 export function registerHttpAll(
   app: typeof App,
   tree: HttpFunctionDefinitionTree,
@@ -178,7 +182,7 @@ export function registerHttpAll(
   for (const [key, value] of Object.entries(tree)) {
     const name = namePrefix ? `${namePrefix}-${key}` : key;
     const route = routePrefix ? `${routePrefix}/${key}` : key;
-    if (isDefinition(value)) {
+    if (isHttpFunctionDefinition(value)) {
       registerHttp(app, name, route, value);
     } else {
       registerHttpAll(app, value as HttpFunctionDefinitionTree, name, route);

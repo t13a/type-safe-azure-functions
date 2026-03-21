@@ -224,6 +224,18 @@ describe("registerHttpAll", () => {
     expect(registered.get("foo")?.methods).toEqual(["POST"]);
   });
 
+  it("does not confuse a nested tree key named 'handler' with a definition", () => {
+    const { app, registered } = mockApp();
+    const leaf = defineHttp({ handler: async () => ({ jsonBody: "leaf" }) });
+
+    registerHttpAll(app, {
+      handler: leaf,
+    });
+
+    expect(registered.size).toBe(1);
+    expect(registered.get("handler")?.route).toBe("handler");
+  });
+
   it("registers nested definitions with prefixed routes and names", () => {
     const { app, registered } = mockApp();
     const leaf = defineHttp({ handler: async () => ({ jsonBody: "leaf" }) });
