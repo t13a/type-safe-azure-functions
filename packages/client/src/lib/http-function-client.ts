@@ -22,23 +22,15 @@ type HttpFunctionClient<T> = {
       : never;
 };
 
-function normalizeHeaders(init?: HeadersInit): Record<string, string> {
-  if (!init) return {};
-  if (init instanceof Headers) return Object.fromEntries(init.entries());
-  if (Array.isArray(init)) return Object.fromEntries(init);
-  return init;
-}
-
 export function createHttpFunctionClient<
   T extends Record<string, any>,
 >(baseUrl: string, pathPrefix = "/api"): HttpFunctionClient<T> {
   const fn = async (input?: { body?: unknown; headers?: HeadersInit }) => {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    new Headers(input?.headers).forEach((v, k) => headers.set(k, v));
     return fetch(`${baseUrl}${pathPrefix}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...normalizeHeaders(input?.headers),
-      },
+      headers,
       body: JSON.stringify(input?.body ?? {}),
     });
   };
