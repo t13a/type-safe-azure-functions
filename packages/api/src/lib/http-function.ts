@@ -9,27 +9,22 @@ import { z } from "zod";
 
 // Context propagation
 
-export type ContextKey<T> = symbol & { readonly _type: T };
+export type VariableKey<T> = symbol & { readonly _type: T };
 
-export function createContextKey<T>(description: string): ContextKey<T> {
-  return Symbol(description) as ContextKey<T>;
+export function createVariableKey<T>(description: string): VariableKey<T> {
+  return Symbol(description) as VariableKey<T>;
 }
 
-export interface Locals {
-  set<T>(key: ContextKey<T>, value: T): void;
-  get<T>(key: ContextKey<T>): T;
-  has(key: ContextKey<any>): boolean;
+export interface Variables {
+  set<T>(key: VariableKey<T>, value: T): void;
+  get<T>(key: VariableKey<T>): T | undefined;
 }
 
-export function createLocals(): Locals {
+export function createVars(): Variables {
   const store = new Map<symbol, unknown>();
   return {
     set(key, value) { store.set(key, value); },
-    get(key) {
-      if (!store.has(key)) throw new Error(`Context key not set: ${key.description}`);
-      return store.get(key) as any;
-    },
-    has(key) { return store.has(key); },
+    get(key) { return store.get(key) as any; },
   };
 }
 
@@ -40,8 +35,8 @@ export type HttpMiddlewareNext = () => Promise<HttpResponseInit>;
 export interface HttpMiddlewareContext {
   request: HttpRequest;
   context: InvocationContext;
+  vars: Variables;
   next: HttpMiddlewareNext;
-  locals: Locals;
 }
 
 export type HttpMiddleware<
@@ -68,8 +63,8 @@ export const defaultMiddleware = (async (c) => {
 export interface HttpHandlerContext<TParsed = void> {
   request: HttpRequest;
   context: InvocationContext;
+  vars: Variables;
   parsed: TParsed;
-  locals: Locals;
 }
 
 export type ParsedHttpHandler<
@@ -148,7 +143,7 @@ function registerHttp(
       request: HttpRequest,
       context: InvocationContext,
     ): Promise<HttpResponseInit> => {
-      const locals = createLocals();
+      const vars = createVars();
       let handlerResult: HttpResponseInit | undefined;
       const next: HttpMiddlewareNext = async () => {
         let parsed: unknown = undefined;
@@ -156,10 +151,10 @@ function registerHttp(
           const raw = await request.json();
           parsed = def.parser.parse(raw);
         }
-        handlerResult = await def.handler({ request, context, parsed: parsed as any, locals });
+        handlerResult = await def.handler({ request, context, vars, parsed: parsed as any });
         return handlerResult;
       };
-      const middlewareResult = await def.middleware({ request, context, next, locals });
+      const middlewareResult = await def.middleware({ request, context, vars, next });
       return middlewareResult ?? handlerResult!;
     },
   });

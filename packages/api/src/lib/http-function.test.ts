@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   combineMiddleware,
-  createContextKey,
-  createLocals,
+  createVariableKey,
+  createVars,
   defaultMiddleware,
   defineHttp,
   registerHttpAll,
@@ -55,26 +55,18 @@ function mockApp() {
 
 // Tests
 
-describe("createContextKey / createLocals", () => {
+describe("createVariableKey / createVars", () => {
   it("stores and retrieves typed values", () => {
-    const key = createContextKey<{ name: string }>("user");
-    const locals = createLocals();
-    locals.set(key, { name: "Alice" });
-    expect(locals.get(key)).toEqual({ name: "Alice" });
+    const key = createVariableKey<{ name: string }>("user");
+    const vars = createVars();
+    vars.set(key, { name: "Alice" });
+    expect(vars.get(key)).toEqual({ name: "Alice" });
   });
 
-  it("has() returns false before set, true after", () => {
-    const key = createContextKey<number>("count");
-    const locals = createLocals();
-    expect(locals.has(key)).toBe(false);
-    locals.set(key, 42);
-    expect(locals.has(key)).toBe(true);
-  });
-
-  it("throws on get for unset key", () => {
-    const key = createContextKey<string>("missing");
-    const locals = createLocals();
-    expect(() => locals.get(key)).toThrow("Context key not set");
+  it("returns undefined for unset key", () => {
+    const key = createVariableKey<string>("missing");
+    const vars = createVars();
+    expect(vars.get(key)).toBeUndefined();
   });
 });
 
@@ -113,8 +105,8 @@ describe("defaultMiddleware", () => {
   it("passes through handler result on success", async () => {
     const expected = { jsonBody: { ok: true } };
     const next: HttpMiddlewareNext = async () => expected;
-    const locals = createLocals();
-    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), next, locals });
+    const vars = createVars();
+    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), vars, next });
     // defaultMiddleware returns void on success (result comes via side-channel)
     expect(result).toBeUndefined();
   });
@@ -125,8 +117,8 @@ describe("defaultMiddleware", () => {
       schema.parse({ x: "not a number" });
       return {};
     };
-    const locals = createLocals();
-    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), next, locals });
+    const vars = createVars();
+    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), vars, next });
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
     expect((result as any).jsonBody.error).toBeDefined();
   });
@@ -135,8 +127,8 @@ describe("defaultMiddleware", () => {
     const next: HttpMiddlewareNext = async () => {
       throw new SyntaxError("Unexpected token");
     };
-    const locals = createLocals();
-    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), next, locals });
+    const vars = createVars();
+    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), vars, next });
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 
@@ -145,8 +137,8 @@ describe("defaultMiddleware", () => {
       throw new Error("boom");
     };
     const ctx = mockContext();
-    const locals = createLocals();
-    const result = await defaultMiddleware({ request: mockRequest(), context: ctx, next, locals });
+    const vars = createVars();
+    const result = await defaultMiddleware({ request: mockRequest(), context: ctx, vars, next });
     expect(result).toMatchObject({ status: 500, jsonBody: { message: "Internal Server Error" } });
     expect(ctx.error).toHaveBeenCalled();
   });
@@ -165,12 +157,12 @@ describe("combineMiddleware", () => {
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([m1, m2]);
-    const locals = createLocals();
+    const vars = createVars();
     const next: HttpMiddlewareNext = async () => {
       order.push(3);
       return { jsonBody: "done" };
     };
-    await combined({ request: mockRequest(), context: mockContext(), next, locals });
+    await combined({ request: mockRequest(), context: mockContext(), vars, next });
     expect(order).toEqual([1, 2, 3]);
   });
 
@@ -185,28 +177,28 @@ describe("combineMiddleware", () => {
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([blocker, m2]);
-    const locals = createLocals();
+    const vars = createVars();
     const next: HttpMiddlewareNext = async () => ({ jsonBody: "should not reach" });
-    const result = await combined({ request: mockRequest(), context: mockContext(), next, locals });
+    const result = await combined({ request: mockRequest(), context: mockContext(), vars, next });
     expect(result).toMatchObject({ status: 403 });
     expect(shouldNotRun).not.toHaveBeenCalled();
   });
 
-  it("shares locals across middlewares", async () => {
-    const key = createContextKey<string>("role");
+  it("shares vars across middlewares", async () => {
+    const key = createVariableKey<string>("role");
     const m1 = (async (c) => {
-      c.locals.set(key, "admin");
+      c.vars.set(key, "admin");
       await c.next();
     }) satisfies HttpMiddleware;
     const m2 = (async (c) => {
-      expect(c.locals.get(key)).toBe("admin");
+      expect(c.vars.get(key)).toBe("admin");
       await c.next();
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([m1, m2]);
-    const locals = createLocals();
+    const vars = createVars();
     const next: HttpMiddlewareNext = async () => ({ jsonBody: "ok" });
-    await combined({ request: mockRequest(), context: mockContext(), next, locals });
+    await combined({ request: mockRequest(), context: mockContext(), vars, next });
   });
 });
 
@@ -304,10 +296,10 @@ describe("handler integration", () => {
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 
-  it("propagates locals from middleware to handler", async () => {
-    const key = createContextKey<string>("tenant");
+  it("propagates vars from middleware to handler", async () => {
+    const key = createVariableKey<string>("tenant");
     const setTenant = (async (c) => {
-      c.locals.set(key, "acme");
+      c.vars.set(key, "acme");
       await c.next();
     }) satisfies HttpMiddleware;
 
@@ -315,7 +307,7 @@ describe("handler integration", () => {
     const def = defineHttp({
       middleware: combineMiddleware([setTenant, defaultMiddleware]),
       handler: async (c) => ({
-        jsonBody: { tenant: c.locals.get(key) },
+        jsonBody: { tenant: c.vars.get(key) },
       }),
     });
 
