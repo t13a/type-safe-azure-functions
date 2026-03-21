@@ -28,14 +28,14 @@ const requireAuth = (async (c) => {
   if (!user) {
     return unauthorizedResponse;
   }
-  c.locals.set(userKey, user);
+  c.vars.set(userKey, user);
   await c.next();
 }) satisfies HttpMiddleware;
 
 export const authMe = defineHttp({
   middleware: combineMiddleware([requireAuth, defaultMiddleware]),
   handler: async (c) => {
-    const user = c.locals.get(userKey);
+    const user = c.vars.get(userKey);
     return { status: 200, jsonBody: user } as const;
   },
 });

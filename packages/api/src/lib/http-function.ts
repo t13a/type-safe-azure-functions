@@ -15,13 +15,13 @@ export function createContextKey<T>(description: string): ContextKey<T> {
   return Symbol(description) as ContextKey<T>;
 }
 
-export interface Locals {
+export interface Variables {
   set<T>(key: ContextKey<T>, value: T): void;
   get<T>(key: ContextKey<T>): T;
   has(key: ContextKey<any>): boolean;
 }
 
-export function createLocals(): Locals {
+export function createVars(): Variables {
   const store = new Map<symbol, unknown>();
   return {
     set(key, value) { store.set(key, value); },
@@ -40,8 +40,8 @@ export type HttpMiddlewareNext = () => Promise<HttpResponseInit>;
 export interface HttpMiddlewareContext {
   request: HttpRequest;
   context: InvocationContext;
+  vars: Variables;
   next: HttpMiddlewareNext;
-  locals: Locals;
 }
 
 export type HttpMiddleware<
@@ -68,8 +68,8 @@ export const defaultMiddleware = (async (c) => {
 export interface HttpHandlerContext<TParsed = void> {
   request: HttpRequest;
   context: InvocationContext;
+  vars: Variables;
   parsed: TParsed;
-  locals: Locals;
 }
 
 export type ParsedHttpHandler<
@@ -148,7 +148,7 @@ function registerHttp(
       request: HttpRequest,
       context: InvocationContext,
     ): Promise<HttpResponseInit> => {
-      const locals = createLocals();
+      const vars = createVars();
       let handlerResult: HttpResponseInit | undefined;
       const next: HttpMiddlewareNext = async () => {
         let parsed: unknown = undefined;
@@ -156,10 +156,10 @@ function registerHttp(
           const raw = await request.json();
           parsed = def.parser.parse(raw);
         }
-        handlerResult = await def.handler({ request, context, parsed: parsed as any, locals });
+        handlerResult = await def.handler({ request, context, vars, parsed: parsed as any });
         return handlerResult;
       };
-      const middlewareResult = await def.middleware({ request, context, next, locals });
+      const middlewareResult = await def.middleware({ request, context, vars, next });
       return middlewareResult ?? handlerResult!;
     },
   });
