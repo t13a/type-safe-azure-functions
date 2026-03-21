@@ -51,8 +51,9 @@ packages/
 └── client/                               # Usage example / integration tests
     ├── src/
     │   ├── lib/
-    │   │   └── http-function-client.ts  # Generic typed fetch wrapper
-    │   └── example.test.ts
+    │   │   ├── http-function-client.ts      # Generic typed fetch wrapper
+    │   │   └── http-function-client.test.ts
+    │   └── example.int.test.ts
     └── package.json
 package.json
 ```
@@ -71,14 +72,13 @@ npm run dev
 
 ## Running tests
 
-All tests run against the live Azure Functions instance. Start the server first, then run:
-
 ```bash
-# terminal 1
-npm run dev
-
-# terminal 2
+# Unit tests (no server required)
 npm test
+
+# Integration tests (requires the dev server)
+npm run dev          # terminal 1
+npm run test:int     # terminal 2
 ```
 
 ## Defining functions

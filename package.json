@@ -3,7 +3,8 @@
   "scripts": {
     "dev": "npm run dev -w packages/api",
     "build": "npm run build -w packages/api",
-    "test": "npm run test --workspaces"
+    "test": "npm run test --workspaces",
+    "test:int": "npm run test:int -w packages/client"
   },
   "workspaces": [
     "packages/api",

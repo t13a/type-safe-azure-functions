@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:int": "vitest run -c vitest.int.config.ts"
   },
   "devDependencies": {
     "@my-app/api": "*",
