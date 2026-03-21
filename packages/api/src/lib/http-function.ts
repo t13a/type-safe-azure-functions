@@ -17,19 +17,14 @@ export function createVariableKey<T>(description: string): VariableKey<T> {
 
 export interface Variables {
   set<T>(key: VariableKey<T>, value: T): void;
-  get<T>(key: VariableKey<T>): T;
-  has(key: VariableKey<any>): boolean;
+  get<T>(key: VariableKey<T>): T | undefined;
 }
 
 export function createVars(): Variables {
   const store = new Map<symbol, unknown>();
   return {
     set(key, value) { store.set(key, value); },
-    get(key) {
-      if (!store.has(key)) throw new Error(`Context key not set: ${key.description}`);
-      return store.get(key) as any;
-    },
-    has(key) { return store.has(key); },
+    get(key) { return store.get(key) as any; },
   };
 }
 

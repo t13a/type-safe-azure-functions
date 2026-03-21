@@ -63,18 +63,10 @@ describe("createVariableKey / createVars", () => {
     expect(vars.get(key)).toEqual({ name: "Alice" });
   });
 
-  it("has() returns false before set, true after", () => {
-    const key = createVariableKey<number>("count");
-    const vars = createVars();
-    expect(vars.has(key)).toBe(false);
-    vars.set(key, 42);
-    expect(vars.has(key)).toBe(true);
-  });
-
-  it("throws on get for unset key", () => {
+  it("returns undefined for unset key", () => {
     const key = createVariableKey<string>("missing");
     const vars = createVars();
-    expect(() => vars.get(key)).toThrow("Context key not set");
+    expect(vars.get(key)).toBeUndefined();
   });
 });
 
