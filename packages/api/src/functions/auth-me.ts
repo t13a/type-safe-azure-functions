@@ -1,5 +1,6 @@
 import {
   combineMiddleware,
+  createContextKey,
   defaultMiddleware,
   defineHttp,
   HttpMiddleware,
@@ -16,7 +17,9 @@ const unauthorizedResponse = {
   jsonBody: { message: "Unauthorized" },
 } as const;
 
-const requireAuth = (async (request, _context, next) => {
+export const userKey = createContextKey<User>("user");
+
+const requireAuth = (async (request, _context, next, locals) => {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return unauthorizedResponse;
@@ -25,14 +28,14 @@ const requireAuth = (async (request, _context, next) => {
   if (!user) {
     return unauthorizedResponse;
   }
+  locals.set(userKey, user);
   await next(request, _context);
 }) satisfies HttpMiddleware;
 
 export const authMe = defineHttp({
   middleware: combineMiddleware([requireAuth, defaultMiddleware]),
-  handler: async (request) => {
-    const token = request.headers.get("authorization")!.replace("Bearer ", "");
-    const user = usersByToken.get(token)!;
+  handler: async (_request, _context, _parsed, locals) => {
+    const user = locals.get(userKey);
     return { status: 200, jsonBody: user } as const;
   },
 });

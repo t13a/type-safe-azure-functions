@@ -9,6 +9,34 @@ import { z } from "zod";
 
 declare const ResponseType: unique symbol;
 
+// Context propagation
+
+export type ContextKey<T> = symbol & { readonly _type: T };
+
+export function createContextKey<T>(description: string): ContextKey<T> {
+  return Symbol(description) as ContextKey<T>;
+}
+
+export interface Locals {
+  set<T>(key: ContextKey<T>, value: T): void;
+  get<T>(key: ContextKey<T>): T;
+  has(key: ContextKey<any>): boolean;
+}
+
+export function createLocals(): Locals {
+  const store = new Map<symbol, unknown>();
+  return {
+    set(key, value) { store.set(key, value); },
+    get(key) {
+      if (!store.has(key)) throw new Error(`Context key not set: ${key.description}`);
+      return store.get(key) as any;
+    },
+    has(key) { return store.has(key); },
+  };
+}
+
+// Middleware
+
 export type HttpMiddlewareNext = (
   request: HttpRequest,
   context: InvocationContext
@@ -20,19 +48,25 @@ export type HttpMiddleware<
   request: HttpRequest,
   context: InvocationContext,
   next: HttpMiddlewareNext,
+  locals: Locals,
 ) => Promise<TReturn | void>;
 
-export const defaultMiddleware = (async (request, context, next) => {
+export const defaultMiddleware = (async (request, context, next, _locals) => {
   try {
     await next(request, context);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return { status: 400, jsonBody: { message: "Bad Request", errors: error.flatten() } } as const;
+      return { status: 400, jsonBody: { message: "Bad Request", error: error.flatten() } } as const;
+    }
+    if (error instanceof SyntaxError) {
+      return { status: 400, jsonBody: { message: "Bad Request", error: error.message } } as const;
     }
     context.error("Internal Server Error", error);
     return { status: 500, jsonBody: { message: "Internal Server Error" } } as const;
   }
 }) satisfies HttpMiddleware;
+
+// Handler
 
 export type ParsedHttpHandler<
   TParser extends z.ZodTypeAny = z.ZodVoid,
@@ -41,7 +75,10 @@ export type ParsedHttpHandler<
   request: HttpRequest,
   context: InvocationContext,
   parsed: z.infer<TParser>,
+  locals: Locals,
 ) => Promise<TReturn>;
+
+// Definition
 
 export interface HttpFunctionDefinition<
   TParser extends z.ZodTypeAny | undefined,
@@ -76,6 +113,7 @@ export function defineHttp<
       request: HttpRequest,
       context: InvocationContext,
       next: HttpMiddlewareNext,
+      locals: Locals,
     ) => Promise<TMiddlewareReturn>;
     parser?: TParser;
     handler: ParsedHttpHandler<TParser, TReturn>;
@@ -93,6 +131,8 @@ export function defineHttp<
   } as any;
 }
 
+// Registration
+
 function registerHttp(
   app: typeof App, name: string, route: string, def: HttpFunctionDefinition<any, any>
 ): void {
@@ -104,6 +144,7 @@ function registerHttp(
       request: HttpRequest,
       context: InvocationContext,
     ): Promise<HttpResponseInit> => {
+      const locals = createLocals();
       let handlerResult: HttpResponseInit | undefined;
       const next = async (req: HttpRequest, ctx: InvocationContext) => {
         let parsed: unknown = undefined;
@@ -111,10 +152,10 @@ function registerHttp(
           const raw = await req.json();
           parsed = def.parser.parse(raw);
         }
-        handlerResult = await def.handler(req, ctx, parsed as any);
+        handlerResult = await def.handler(req, ctx, parsed as any, locals);
         return handlerResult;
       };
-      const middlewareResult = await def.middleware(request, context, next);
+      const middlewareResult = await def.middleware(request, context, next, locals);
       return middlewareResult ?? handlerResult!;
     },
   });
@@ -145,6 +186,8 @@ export function registerHttpAll(
   }
 }
 
+// Middleware composition
+
 type ExtractMiddlewareReturn<T> =
   T extends (...args: any[]) => Promise<infer R>
     ? Exclude<R, void | undefined>
@@ -153,7 +196,7 @@ type ExtractMiddlewareReturn<T> =
 export function combineMiddleware<const T extends readonly HttpMiddleware<any>[]>(
   middlewares: [...T],
 ): HttpMiddleware<ExtractMiddlewareReturn<T[number]>> {
-  return ((request, context, next) => {
+  return ((request, context, next, locals) => {
     const dispatch = (i: number): HttpMiddlewareNext =>
       async (req, ctx) => {
         if (i >= middlewares.length) return next(req, ctx);
@@ -162,7 +205,7 @@ export function combineMiddleware<const T extends readonly HttpMiddleware<any>[]
           nextResult = await dispatch(i + 1)(r, c);
           return nextResult;
         };
-        const middlewareResult = await middlewares[i](req, ctx, innerNext);
+        const middlewareResult = await middlewares[i](req, ctx, innerNext, locals);
         return (middlewareResult ?? nextResult)!;
       };
     return dispatch(0)(request, context);

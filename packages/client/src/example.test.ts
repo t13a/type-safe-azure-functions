@@ -29,7 +29,7 @@ describe("todo API", () => {
     if (res.status !== 400) throw new Error(`Expected 400, got ${res.status}`);
     const err = await res.json();
     expect(err.message).toBe("Bad Request");
-    expect(err.errors).toBeDefined();
+    expect(err.error).toBeDefined();
   });
 
   it("authenticates with valid token", async () => {

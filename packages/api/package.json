@@ -11,13 +11,15 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "func start"
+    "start": "func start",
+    "test": "vitest run"
   },
   "dependencies": {
     "@azure/functions": "^4.6",
     "zod": "^3.24"
   },
   "devDependencies": {
-    "typescript": "^5.7"
+    "typescript": "^5.7",
+    "vitest": "^4.1.0"
   }
 }
