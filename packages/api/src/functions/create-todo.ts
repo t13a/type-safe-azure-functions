@@ -6,14 +6,14 @@ export const createTodo = defineHttp({
     title: z.string().min(1),
     completed: z.boolean().optional().default(false),
   }),
-  handler: async ({ context, parsed }) => {
-    context.log(`Creating todo: ${parsed.title}`);
+  handler: async (c) => {
+    c.context.log(`Creating todo: ${c.parsed.title}`);
 
     return {
       jsonBody: {
         id: crypto.randomUUID(),
-        title: parsed.title,
-        completed: parsed.completed,
+        title: c.parsed.title,
+        completed: c.parsed.completed,
       },
     };
   },

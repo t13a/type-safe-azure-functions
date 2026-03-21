@@ -48,9 +48,9 @@ export type HttpMiddleware<
   TReturn extends HttpResponseInit = HttpResponseInit,
 > = (c: HttpMiddlewareContext) => Promise<TReturn | void>;
 
-export const defaultMiddleware = (async ({ next, context }) => {
+export const defaultMiddleware = (async (c) => {
   try {
-    await next();
+    await c.next();
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { status: 400, jsonBody: { message: "Bad Request", error: error.flatten() } } as const;
@@ -58,7 +58,7 @@ export const defaultMiddleware = (async ({ next, context }) => {
     if (error instanceof SyntaxError) {
       return { status: 400, jsonBody: { message: "Bad Request", error: error.message } } as const;
     }
-    context.error("Internal Server Error", error);
+    c.context.error("Internal Server Error", error);
     return { status: 500, jsonBody: { message: "Internal Server Error" } } as const;
   }
 }) satisfies HttpMiddleware;
@@ -196,16 +196,16 @@ type ExtractMiddlewareReturn<T> =
 export function combineMiddleware<const T extends readonly HttpMiddleware<any>[]>(
   middlewares: [...T],
 ): HttpMiddleware<ExtractMiddlewareReturn<T[number]>> {
-  return (({ request, context, next, locals }) => {
+  return ((c) => {
     const dispatch = (i: number): HttpMiddlewareNext =>
       async () => {
-        if (i >= middlewares.length) return next();
+        if (i >= middlewares.length) return c.next();
         let nextResult: HttpResponseInit | undefined;
         const innerNext: HttpMiddlewareNext = async () => {
           nextResult = await dispatch(i + 1)();
           return nextResult;
         };
-        const middlewareResult = await middlewares[i]({ request, context, next: innerNext, locals });
+        const middlewareResult = await middlewares[i]({ ...c, next: innerNext });
         return (middlewareResult ?? nextResult)!;
       };
     return dispatch(0)();

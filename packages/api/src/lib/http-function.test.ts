@@ -88,8 +88,8 @@ describe("defineHttp", () => {
   });
 
   it("stores custom middleware", () => {
-    const custom = (async ({ next }) => {
-      await next();
+    const custom = (async (c) => {
+      await c.next();
     }) satisfies HttpMiddleware;
 
     const def = defineHttp({
@@ -103,7 +103,7 @@ describe("defineHttp", () => {
     const schema = z.object({ x: z.number() });
     const def = defineHttp({
       parser: schema,
-      handler: async ({ parsed }) => ({ jsonBody: parsed }),
+      handler: async (c) => ({ jsonBody: c.parsed }),
     });
     expect(def.parser).toBe(schema);
   });
@@ -155,13 +155,13 @@ describe("defaultMiddleware", () => {
 describe("combineMiddleware", () => {
   it("executes middlewares in order and calls next", async () => {
     const order: number[] = [];
-    const m1 = (async ({ next }) => {
+    const m1 = (async (c) => {
       order.push(1);
-      await next();
+      await c.next();
     }) satisfies HttpMiddleware;
-    const m2 = (async ({ next }) => {
+    const m2 = (async (c) => {
       order.push(2);
-      await next();
+      await c.next();
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([m1, m2]);
@@ -179,9 +179,9 @@ describe("combineMiddleware", () => {
       return { status: 403 as const, jsonBody: { message: "Forbidden" } };
     }) satisfies HttpMiddleware;
     const shouldNotRun = vi.fn();
-    const m2 = (async ({ next }) => {
+    const m2 = (async (c) => {
       shouldNotRun();
-      await next();
+      await c.next();
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([blocker, m2]);
@@ -194,13 +194,13 @@ describe("combineMiddleware", () => {
 
   it("shares locals across middlewares", async () => {
     const key = createContextKey<string>("role");
-    const m1 = (async ({ next, locals }) => {
-      locals.set(key, "admin");
-      await next();
+    const m1 = (async (c) => {
+      c.locals.set(key, "admin");
+      await c.next();
     }) satisfies HttpMiddleware;
-    const m2 = (async ({ next, locals }) => {
-      expect(locals.get(key)).toBe("admin");
-      await next();
+    const m2 = (async (c) => {
+      expect(c.locals.get(key)).toBe("admin");
+      await c.next();
     }) satisfies HttpMiddleware;
 
     const combined = combineMiddleware([m1, m2]);
@@ -254,8 +254,8 @@ describe("handler integration", () => {
     const { app, registered } = mockApp();
     const def = defineHttp({
       parser: z.object({ name: z.string() }),
-      handler: async ({ parsed }) => ({
-        jsonBody: { greeting: `Hello ${parsed.name}` },
+      handler: async (c) => ({
+        jsonBody: { greeting: `Hello ${c.parsed.name}` },
       }),
     });
 
@@ -281,7 +281,7 @@ describe("handler integration", () => {
     const { app, registered } = mockApp();
     const def = defineHttp({
       parser: z.object({ count: z.number() }),
-      handler: async ({ parsed }) => ({ jsonBody: parsed }),
+      handler: async (c) => ({ jsonBody: c.parsed }),
     });
 
     registerHttpAll(app, { nums: def });
@@ -294,7 +294,7 @@ describe("handler integration", () => {
     const { app, registered } = mockApp();
     const def = defineHttp({
       parser: z.object({ x: z.number() }),
-      handler: async ({ parsed }) => ({ jsonBody: parsed }),
+      handler: async (c) => ({ jsonBody: c.parsed }),
     });
 
     registerHttpAll(app, { parse: def });
@@ -306,16 +306,16 @@ describe("handler integration", () => {
 
   it("propagates locals from middleware to handler", async () => {
     const key = createContextKey<string>("tenant");
-    const setTenant = (async ({ next, locals }) => {
-      locals.set(key, "acme");
-      await next();
+    const setTenant = (async (c) => {
+      c.locals.set(key, "acme");
+      await c.next();
     }) satisfies HttpMiddleware;
 
     const { app, registered } = mockApp();
     const def = defineHttp({
       middleware: combineMiddleware([setTenant, defaultMiddleware]),
-      handler: async ({ locals }) => ({
-        jsonBody: { tenant: locals.get(key) },
+      handler: async (c) => ({
+        jsonBody: { tenant: c.locals.get(key) },
       }),
     });
 
