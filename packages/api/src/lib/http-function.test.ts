@@ -6,7 +6,7 @@ import {
   createVars,
   defaultMiddleware,
   defineHttp,
-  registerHttpFlat,
+  registerHttp,
   type HttpMiddleware,
   type HttpMiddlewareNext,
 } from "./http-function.js";
@@ -202,28 +202,16 @@ describe("combineMiddleware", () => {
   });
 });
 
-describe("registerHttpFlat", () => {
-  it("registers definitions with correct routes and names", () => {
+describe("registerHttp", () => {
+  it("registers a definition with the given name and route", () => {
     const { app, registered } = mockApp();
-    const def1 = defineHttp({ handler: async () => ({ jsonBody: "a" }) });
-    const def2 = defineHttp({ handler: async () => ({ jsonBody: "b" }) });
+    const def = defineHttp({ handler: async () => ({ jsonBody: "a" }) });
 
-    registerHttpFlat(app, { foo: def1, bar: def2 });
-
-    expect(registered.size).toBe(2);
-    expect(registered.get("foo")?.route).toBe("foo");
-    expect(registered.get("bar")?.route).toBe("bar");
-    expect(registered.get("foo")?.methods).toEqual(["POST"]);
-  });
-
-  it("applies name and route prefix", () => {
-    const { app, registered } = mockApp();
-    const leaf = defineHttp({ handler: async () => ({ jsonBody: "leaf" }) });
-
-    registerHttpFlat(app, { stats: leaf }, "management", "management");
+    registerHttp(app, "foo", "foo", def);
 
     expect(registered.size).toBe(1);
-    expect(registered.get("management-stats")?.route).toBe("management/stats");
+    expect(registered.get("foo")?.route).toBe("foo");
+    expect(registered.get("foo")?.methods).toEqual(["POST"]);
   });
 });
 
@@ -237,7 +225,7 @@ describe("handler integration", () => {
       }),
     });
 
-    registerHttpFlat(app, { greet: def });
+    registerHttp(app, "greet", "greet", def);
     const handler = registered.get("greet")!.handler;
     const result = await handler(mockRequest({ name: "World" }), mockContext());
     expect(result).toEqual({ jsonBody: { greeting: "Hello World" } });
@@ -249,7 +237,7 @@ describe("handler integration", () => {
       handler: async () => ({ jsonBody: { ok: true } }),
     });
 
-    registerHttpFlat(app, { health: def });
+    registerHttp(app, "health", "health", def);
     const handler = registered.get("health")!.handler;
     const result = await handler(mockRequest(), mockContext());
     expect(result).toEqual({ jsonBody: { ok: true } });
@@ -262,7 +250,7 @@ describe("handler integration", () => {
       handler: async (c) => ({ jsonBody: c.parsed }),
     });
 
-    registerHttpFlat(app, { nums: def });
+    registerHttp(app, "nums", "nums", def);
     const handler = registered.get("nums")!.handler;
     const result = await handler(mockRequest({ count: "nope" }), mockContext());
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
@@ -275,7 +263,7 @@ describe("handler integration", () => {
       handler: async (c) => ({ jsonBody: c.parsed }),
     });
 
-    registerHttpFlat(app, { parse: def });
+    registerHttp(app, "parse", "parse", def);
     const handler = registered.get("parse")!.handler;
     // mockRequest with undefined body throws SyntaxError from json()
     const result = await handler(mockRequest(undefined), mockContext());
@@ -297,7 +285,7 @@ describe("handler integration", () => {
       }),
     });
 
-    registerHttpFlat(app, { tenanted: def });
+    registerHttp(app, "tenanted", "tenanted", def);
     const handler = registered.get("tenanted")!.handler;
     const result = await handler(mockRequest(), mockContext());
     expect(result).toEqual({ jsonBody: { tenant: "acme" } });
@@ -318,7 +306,7 @@ describe("handler integration", () => {
       },
     });
 
-    registerHttpFlat(app, { blocked: def });
+    registerHttp(app, "blocked", "blocked", def);
     const handler = registered.get("blocked")!.handler;
     const result = await handler(mockRequest(), mockContext());
     expect(result).toMatchObject({ status: 401 });

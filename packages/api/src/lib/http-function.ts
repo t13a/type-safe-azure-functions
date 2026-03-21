@@ -1,5 +1,6 @@
 import {
   type app as App,
+  type HttpFunctionOptions,
   type HttpRequest,
   type HttpResponseInit,
   type InvocationContext,
@@ -79,6 +80,7 @@ export interface HttpFunctionDefinition<
   TParser extends z.ZodTypeAny | undefined,
   TResponse,
 > {
+  options: Omit<HttpFunctionOptions, "handler" | "methods" | "route">;
   middleware: HttpMiddleware;
   parser: TParser;
   handler: ParsedHttpHandler<TParser extends z.ZodTypeAny ? TParser : z.ZodVoid>;
@@ -97,11 +99,12 @@ type ExtractResponse<T> = T extends any
   : never;
 
 export function defineHttp<
+  const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,
   TParser extends z.ZodTypeAny = z.ZodVoid,
   TReturn extends HttpResponseInit = HttpResponseInit,
   TMiddlewareReturn = Awaited<ReturnType<typeof defaultMiddleware>> | void,
 >(
-  options: {
+  options: TOptions & {
     middleware?: (c: HttpMiddlewareContext) => Promise<TMiddlewareReturn>;
     parser?: TParser;
     handler: ParsedHttpHandler<TParser, TReturn>;
@@ -110,8 +113,9 @@ export function defineHttp<
   TParser extends z.ZodVoid ? undefined : TParser,
   ExtractResponse<TReturn> | ExtractResponse<Exclude<TMiddlewareReturn, void>>
 > {
-  const { handler, middleware, parser } = options as any;
+  const { handler, middleware, parser, ...rest } = options as any;
   return {
+    options: rest,
     middleware: middleware ?? defaultMiddleware,
     parser: parser ?? undefined,
     handler,
@@ -122,10 +126,11 @@ export function defineHttp<
 
 export type HttpFunctionDefinitionMap = Record<string, HttpFunctionDefinition<any, any>>;
 
-function registerHttp(
+export function registerHttp(
   app: typeof App, name: string, route: string, def: HttpFunctionDefinition<any, any>
 ): void {
   app.http(name, {
+    ...def.options,
     methods: ["POST"],
     route,
     handler: async (
@@ -149,18 +154,6 @@ function registerHttp(
   });
 }
 
-export function registerHttpFlat(
-  app: typeof App,
-  defs: HttpFunctionDefinitionMap,
-  namePrefix = "",
-  routePrefix = "",
-): void {
-  for (const [key, def] of Object.entries(defs)) {
-    const name = namePrefix ? `${namePrefix}-${key}` : key;
-    const route = routePrefix ? `${routePrefix}/${key}` : key;
-    registerHttp(app, name, route, def);
-  }
-}
 
 // Middleware composition
 
