@@ -1,6 +1,5 @@
 import {
   type app as App,
-  type HttpFunctionOptions,
   type HttpRequest,
   type HttpResponseInit,
   type InvocationContext,
@@ -74,24 +73,16 @@ export type ParsedHttpHandler<
 
 // Definition
 
-const HttpFunctionDefinitionBrand = Symbol("HttpFunctionDefinition");
-
 declare const ResponseType: unique symbol;
 
 export interface HttpFunctionDefinition<
   TParser extends z.ZodTypeAny | undefined,
   TResponse,
 > {
-  readonly [HttpFunctionDefinitionBrand]: true;
-  options: Omit<HttpFunctionOptions, "handler" | "methods" | "route">;
   middleware: HttpMiddleware;
   parser: TParser;
   handler: ParsedHttpHandler<TParser extends z.ZodTypeAny ? TParser : z.ZodVoid>;
   [ResponseType]: TResponse;
-}
-
-function isHttpFunctionDefinition(value: unknown): value is HttpFunctionDefinition<any, any> {
-  return typeof value === "object" && value !== null && HttpFunctionDefinitionBrand in value;
 }
 
 type ExtractResponse<T> = T extends any
@@ -106,12 +97,11 @@ type ExtractResponse<T> = T extends any
   : never;
 
 export function defineHttp<
-  const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,
   TParser extends z.ZodTypeAny = z.ZodVoid,
   TReturn extends HttpResponseInit = HttpResponseInit,
   TMiddlewareReturn = Awaited<ReturnType<typeof defaultMiddleware>> | void,
 >(
-  options: TOptions & {
+  options: {
     middleware?: (c: HttpMiddlewareContext) => Promise<TMiddlewareReturn>;
     parser?: TParser;
     handler: ParsedHttpHandler<TParser, TReturn>;
@@ -120,10 +110,8 @@ export function defineHttp<
   TParser extends z.ZodVoid ? undefined : TParser,
   ExtractResponse<TReturn> | ExtractResponse<Exclude<TMiddlewareReturn, void>>
 > {
-  const { handler, middleware, parser, ...rest } = options as any;
+  const { handler, middleware, parser } = options as any;
   return {
-    [HttpFunctionDefinitionBrand]: true,
-    options: rest,
     middleware: middleware ?? defaultMiddleware,
     parser: parser ?? undefined,
     handler,
@@ -132,11 +120,12 @@ export function defineHttp<
 
 // Registration
 
+export type HttpFunctionDefinitionMap = Record<string, HttpFunctionDefinition<any, any>>;
+
 function registerHttp(
   app: typeof App, name: string, route: string, def: HttpFunctionDefinition<any, any>
 ): void {
   app.http(name, {
-    ...def.options,
     methods: ["POST"],
     route,
     handler: async (
@@ -160,24 +149,16 @@ function registerHttp(
   });
 }
 
-export interface HttpFunctionDefinitionTree {
-  [key: string]: HttpFunctionDefinition<any, any> | HttpFunctionDefinitionTree;
-};
-
-export function registerHttpAll(
+export function registerHttpFlat(
   app: typeof App,
-  tree: HttpFunctionDefinitionTree,
+  defs: HttpFunctionDefinitionMap,
   namePrefix = "",
   routePrefix = "",
 ): void {
-  for (const [key, value] of Object.entries(tree)) {
+  for (const [key, def] of Object.entries(defs)) {
     const name = namePrefix ? `${namePrefix}-${key}` : key;
     const route = routePrefix ? `${routePrefix}/${key}` : key;
-    if (isHttpFunctionDefinition(value)) {
-      registerHttp(app, name, route, value);
-    } else {
-      registerHttpAll(app, value as HttpFunctionDefinitionTree, name, route);
-    }
+    registerHttp(app, name, route, def);
   }
 }
 

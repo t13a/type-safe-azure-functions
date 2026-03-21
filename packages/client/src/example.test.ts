@@ -1,8 +1,9 @@
-import type { defs } from "@my-app/api";
+import type { defs, managementDefs } from "@my-app/api";
 import { createHttpFunctionClient } from "./lib/http-function-client.js";
 import { describe, expect, it } from "vitest";
 
 const client = createHttpFunctionClient<typeof defs>("http://localhost:7071");
+const managementClient = createHttpFunctionClient<typeof managementDefs>("http://localhost:7071", "/api/management");
 
 describe("todo API", () => {
   it("list all todos", async () => {
@@ -60,7 +61,7 @@ describe("todo API", () => {
 
 describe("management API", () => {
   it("shows stats", async () => {
-    const res = await client.management.showStats();
+    const res = await managementClient.showStats();
     if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
     const stats = await res.json();
     expect(stats.totalUsers).toBe(42);

@@ -1,5 +1,6 @@
-import { registerHttpAll } from "./lib/http-function.js";
-import { defs } from "./functions/index.js";
+import { registerHttpFlat } from "./lib/http-function.js";
+import { defs, managementDefs } from "./functions/index.js";
 import { app } from "@azure/functions";
 
-registerHttpAll(app, defs);
+registerHttpFlat(app, defs);
+registerHttpFlat(app, managementDefs, "management", "management");
