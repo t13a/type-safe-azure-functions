@@ -4,8 +4,8 @@ import {
   combineMiddleware,
   createVariableKey,
   createVars,
-  defaultMiddleware,
-  withDefaultMiddleware,
+  catchError,
+  withCatchError,
   withMiddleware,
   type HttpMiddleware,
   type HttpMiddlewareNext,
@@ -71,12 +71,12 @@ describe("createVariableKey / createVars", () => {
   });
 });
 
-describe("defaultMiddleware", () => {
+describe("catchError", () => {
   it("passes through handler result on success", async () => {
     const expected = { jsonBody: { ok: true } };
     const next: HttpMiddlewareNext = async () => expected;
     const vars = createVars();
-    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), vars, next });
+    const result = await catchError({ request: mockRequest(), context: mockContext(), vars, next });
     expect(result).toBeUndefined();
   });
 
@@ -87,7 +87,7 @@ describe("defaultMiddleware", () => {
       return {};
     };
     const vars = createVars();
-    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), vars, next });
+    const result = await catchError({ request: mockRequest(), context: mockContext(), vars, next });
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
     expect((result as any).jsonBody.error).toBeDefined();
   });
@@ -97,7 +97,7 @@ describe("defaultMiddleware", () => {
       throw new SyntaxError("Unexpected token");
     };
     const vars = createVars();
-    const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), vars, next });
+    const result = await catchError({ request: mockRequest(), context: mockContext(), vars, next });
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 
@@ -107,7 +107,7 @@ describe("defaultMiddleware", () => {
     };
     const ctx = mockContext();
     const vars = createVars();
-    const result = await defaultMiddleware({ request: mockRequest(), context: ctx, vars, next });
+    const result = await catchError({ request: mockRequest(), context: ctx, vars, next });
     expect(result).toMatchObject({ status: 500, jsonBody: { message: "Internal Server Error" } });
     expect(ctx.error).toHaveBeenCalled();
   });
@@ -174,7 +174,7 @@ describe("combineMiddleware", () => {
 describe("withMiddleware", () => {
   it("parses body with parser and passes to handler", async () => {
     const schema = z.object({ name: z.string() });
-    const wrapped = withMiddleware([defaultMiddleware], async (c) => ({
+    const wrapped = withMiddleware([catchError], async (c) => ({
       jsonBody: { greeting: `Hello ${c.parsed.name}` },
     }));
 
@@ -183,7 +183,7 @@ describe("withMiddleware", () => {
   });
 
   it("returns handler result when no parser", async () => {
-    const wrapped = withMiddleware([defaultMiddleware], async () => ({
+    const wrapped = withMiddleware([catchError], async () => ({
       jsonBody: { ok: true },
     }));
 
@@ -193,7 +193,7 @@ describe("withMiddleware", () => {
 
   it("returns 400 when body fails validation", async () => {
     const schema = z.object({ count: z.number() });
-    const wrapped = withMiddleware([defaultMiddleware], async (c) => ({
+    const wrapped = withMiddleware([catchError], async (c) => ({
       jsonBody: c.parsed,
     }));
 
@@ -203,7 +203,7 @@ describe("withMiddleware", () => {
 
   it("returns 400 when body is not valid JSON", async () => {
     const schema = z.object({ x: z.number() });
-    const wrapped = withMiddleware([defaultMiddleware], async (c) => ({
+    const wrapped = withMiddleware([catchError], async (c) => ({
       jsonBody: c.parsed,
     }));
 
@@ -218,7 +218,7 @@ describe("withMiddleware", () => {
       await c.next();
     }) satisfies HttpMiddleware;
 
-    const wrapped = withMiddleware([setTenant, defaultMiddleware], async (c) => ({
+    const wrapped = withMiddleware([setTenant, catchError], async (c) => ({
       jsonBody: { tenant: c.vars.get(key) },
     }));
 
@@ -243,9 +243,9 @@ describe("withMiddleware", () => {
   });
 });
 
-describe("withDefaultMiddleware", () => {
-  it("is equivalent to withMiddleware([defaultMiddleware], handler)", async () => {
-    const wrapped = withDefaultMiddleware(async () => ({
+describe("withCatchError", () => {
+  it("is equivalent to withMiddleware([catchError], handler)", async () => {
+    const wrapped = withCatchError(async () => ({
       jsonBody: { ok: true },
     }));
 
@@ -255,7 +255,7 @@ describe("withDefaultMiddleware", () => {
 
   it("catches ZodError and returns 400", async () => {
     const schema = z.object({ x: z.number() });
-    const wrapped = withDefaultMiddleware(async (c) => ({
+    const wrapped = withCatchError(async (c) => ({
       jsonBody: c.parsed,
     }));
 
@@ -269,7 +269,7 @@ describe("handler integration (end-to-end)", () => {
     const { app, registered } = mockApp();
     const def = http({
       parser: z.object({ name: z.string() }),
-      handler: withDefaultMiddleware(async (c) => ({
+      handler: withCatchError(async (c) => ({
         jsonBody: { greeting: `Hello ${c.parsed.name}` },
       })),
     });

@@ -101,14 +101,14 @@ Use `http()` to declare an endpoint with its validation schema. The function nam
 
 ```typescript
 import { z } from "zod";
-import { http, withDefaultMiddleware } from "../lib/http-function-v2/index.js";
+import { http, withCatchError } from "../lib/http-function-v2/index.js";
 
 export const createTodo = http({
   parser: z.object({
     title: z.string().min(1),
     completed: z.boolean().optional().default(false),
   }),
-  handler: withDefaultMiddleware(async (c) => {
+  handler: withCatchError(async (c) => {
     c.context.log(`Creating todo: ${c.parsed.title}`);
 
     return {
@@ -122,10 +122,10 @@ export const createTodo = http({
 });
 ```
 
-- `http()` defines an endpoint. The `handler` receives `(request, context, parser)` — but when wrapped with `withDefaultMiddleware` or `withMiddleware`, the handler receives a context object `c` with `request`, `context`, `vars`, and `parsed` properties instead
+- `http()` defines an endpoint. The `handler` receives `(request, context, parser)` — but when wrapped with `withCatchError` or `withMiddleware`, the handler receives a context object `c` with `request`, `context`, `vars`, and `parsed` properties instead
 - `parser` takes a Zod schema directly — the parsed result is available via `c.parsed`
 - When `parser` is omitted, `c.parsed` is typed as `void`
-- `withDefaultMiddleware(handler)` is a shortcut for `withMiddleware([defaultMiddleware], handler)` — it handles `ZodError` (400), `SyntaxError` (400), and unhandled exceptions (500)
+- `withCatchError(handler)` is a shortcut for `withMiddleware([catchError], handler)` — it handles `ZodError` (400), `SyntaxError` (400), and unhandled exceptions (500)
 - The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler` — those are controlled by the framework. `authLevel`, `retry`, and other options work as-is.
 
 ## Middleware
@@ -137,7 +137,7 @@ import {
   http,
   withMiddleware,
   createVariableKey,
-  defaultMiddleware,
+  catchError,
   type HttpMiddleware,
 } from "../lib/http-function-v2/index.js";
 
@@ -168,7 +168,7 @@ const requireAuth = (async (c) => {
 }) satisfies HttpMiddleware;
 
 export const authMe = http({
-  handler: withMiddleware([requireAuth, defaultMiddleware], async (c) => {
+  handler: withMiddleware([requireAuth, catchError], async (c) => {
     const user = c.vars.get(userKey)!;
     return { status: 200, jsonBody: user } as const;
   }),
@@ -253,7 +253,7 @@ if (authRes.status === 200) {
 }
 ```
 
-The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Error response shapes are inferred from the server's middleware (or `defaultMiddleware` when omitted), so custom error types flow to the client automatically.
+The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Error response shapes are inferred from the server's middleware (or `catchError` when omitted), so custom error types flow to the client automatically.
 
 Headers are passed as `HeadersInit` (the standard fetch type) — `Record<string, string>`, `Headers`, or `string[][]` all work. User-provided headers are merged with the default `Content-Type: application/json`, and user values take precedence.
 

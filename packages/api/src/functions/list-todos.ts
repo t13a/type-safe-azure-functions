@@ -1,7 +1,7 @@
-import { http, withDefaultMiddleware } from "../lib/http-function-v2/index.js";
+import { http, withCatchError } from "../lib/http-function-v2/index.js";
 
 export const listTodos = http({
-  handler: withDefaultMiddleware(async () => {
+  handler: withCatchError(async () => {
     return {
       jsonBody: [
         {

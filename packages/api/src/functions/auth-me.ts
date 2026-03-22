@@ -2,7 +2,7 @@ import {
   http,
   withMiddleware,
   createVariableKey,
-  defaultMiddleware,
+  catchError,
   type HttpMiddleware,
 } from "../lib/http-function-v2/index.js";
 
@@ -33,7 +33,7 @@ const requireAuth = (async (c) => {
 }) satisfies HttpMiddleware;
 
 export const authMe = http({
-  handler: withMiddleware([requireAuth, defaultMiddleware], async (c) => {
+  handler: withMiddleware([requireAuth, catchError], async (c) => {
     const user = c.vars.get(userKey)!;
     return { status: 200, jsonBody: user } as const;
   }),

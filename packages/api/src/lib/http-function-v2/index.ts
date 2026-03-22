@@ -6,9 +6,9 @@ export type {
 
 export {
   withMiddleware,
-  withDefaultMiddleware,
+  withCatchError,
   combineMiddleware,
-  defaultMiddleware,
+  catchError,
   createVars,
   createVariableKey,
 } from "./middleware.js";

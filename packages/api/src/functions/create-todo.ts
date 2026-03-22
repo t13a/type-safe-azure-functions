@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { http, withDefaultMiddleware } from "../lib/http-function-v2/index.js";
+import { http, withCatchError } from "../lib/http-function-v2/index.js";
 
 export const createTodo = http({
   parser: z.object({
     title: z.string().min(1),
     completed: z.boolean().optional().default(false),
   }),
-  handler: withDefaultMiddleware(async (c) => {
+  handler: withCatchError(async (c) => {
     c.context.log(`Creating todo: ${c.parsed.title}`);
 
     return {

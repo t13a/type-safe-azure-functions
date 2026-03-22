@@ -42,21 +42,6 @@ export type HttpMiddleware<
   TReturn extends HttpResponseInit = HttpResponseInit,
 > = (c: HttpMiddlewareContext) => Promise<TReturn | void>;
 
-export const defaultMiddleware = (async (c) => {
-  try {
-    await c.next();
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return { status: 400, jsonBody: { message: "Bad Request", error: error.flatten() } } as const;
-    }
-    if (error instanceof SyntaxError) {
-      return { status: 400, jsonBody: { message: "Bad Request", error: error.message } } as const;
-    }
-    c.context.error("Internal Server Error", error);
-    return { status: 500, jsonBody: { message: "Internal Server Error" } } as const;
-  }
-}) satisfies HttpMiddleware;
-
 // Middleware composition
 
 type ExtractMiddlewareReturn<T> =
@@ -133,9 +118,26 @@ export function withMiddleware<
   }) as HttpHandlerWithParser<TParser, TReturn | ExtractMiddlewareReturn<TMiddlewares[number]>>;
 }
 
-export function withDefaultMiddleware<
+// Catch error middleware
+
+export const catchError = (async (c) => {
+  try {
+    await c.next();
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return { status: 400, jsonBody: { message: "Bad Request", error: error.flatten() } } as const;
+    }
+    if (error instanceof SyntaxError) {
+      return { status: 400, jsonBody: { message: "Bad Request", error: error.message } } as const;
+    }
+    c.context.error("Internal Server Error", error);
+    return { status: 500, jsonBody: { message: "Internal Server Error" } } as const;
+  }
+}) satisfies HttpMiddleware;
+
+export function withCatchError<
   TParser extends z.ZodTypeAny | undefined,
   TReturn extends HttpResponseInit,
 >(handler: ParsedHttpHandler<TParser, TReturn>) {
-  return withMiddleware([defaultMiddleware], handler);
+  return withMiddleware([catchError], handler);
 }
