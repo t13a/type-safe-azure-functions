@@ -104,22 +104,23 @@ export const createTodo = defineHttp({
     title: z.string().min(1),
     completed: z.boolean().optional().default(false),
   }),
-  handler: async (_request, context, parsed) => {
-    context.log(`Creating todo: ${parsed.title}`);
+  handler: async (c) => {
+    c.context.log(`Creating todo: ${c.parsed.title}`);
 
     return {
       jsonBody: { // ← response type inferred from here
         id: crypto.randomUUID(),
-        title: parsed.title,
-        completed: parsed.completed,
+        title: c.parsed.title,
+        completed: c.parsed.completed,
       },
     };
   },
 });
 ```
 
-- `parser` takes a Zod schema directly — the parsed result is passed as the handler's third argument
-- When omitted, the handler receives no parsed data (typed as `void`)
+- Handler receives a single context object `c` with `request`, `context`, `vars`, and `parsed` properties
+- `parser` takes a Zod schema directly — the parsed result is available via `c.parsed`
+- When `parser` is omitted, `c.parsed` is typed as `void`
 - The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler` — those are controlled by the framework. `authLevel`, `retry`, and other options work as-is.
 
 ## Middleware
@@ -129,6 +130,7 @@ Each function can define its own middleware. Middleware wraps the handler and ca
 ```typescript
 import {
   combineMiddleware,
+  createVariableKey,
   defaultMiddleware,
   defineHttp,
   HttpMiddleware,
@@ -145,8 +147,10 @@ const unauthorizedResponse = {
   jsonBody: { message: "Unauthorized" },
 } as const;
 
-const requireAuth = (async (request, _context, next) => {
-  const authHeader = request.headers.get("authorization");
+export const userKey = createVariableKey<User>("user");
+
+const requireAuth = (async (c) => {
+  const authHeader = c.request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return unauthorizedResponse;
   }
@@ -154,21 +158,23 @@ const requireAuth = (async (request, _context, next) => {
   if (!user) {
     return unauthorizedResponse;
   }
-  await next(request, _context);
+  c.vars.set(userKey, user);
+  await c.next();
 }) satisfies HttpMiddleware;
 
 export const authMe = defineHttp({
   middleware: combineMiddleware([requireAuth, defaultMiddleware]),
-  handler: async (request) => {
-    const token = request.headers.get("authorization")!.replace("Bearer ", "");
-    const user = usersByToken.get(token)!;
+  handler: async (c) => {
+    const user = c.vars.get(userKey)!;
     return { status: 200, jsonBody: user } as const;
   },
 });
 ```
 
+- Middleware receives a single context object `c` with `request`, `context`, `vars`, and `next` properties
+- `c.vars` is a typed key-value store (`createVariableKey<T>()`) for passing data between middleware and handlers
 - When `middleware` is omitted, `defaultMiddleware` is used (returns 400 for `ZodError`, 500 for unhandled exceptions)
-- Middleware can return its own response to short-circuit, or call `next(request, context)` to invoke the handler
+- Middleware can return its own response to short-circuit, or call `c.next()` to invoke the handler
 - Middleware cannot modify the handler's response (read-only) — return `void` or your own response
 - The middleware's return type is inferred and included in the client's response type union, so status code narrowing works for custom error shapes too
 - Use `combineMiddleware([...])` to compose multiple middlewares — they execute in order, and the combined response type is the union of all middlewares' return types
