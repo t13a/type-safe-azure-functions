@@ -74,22 +74,6 @@ export function http<
   } as any;
 }
 
-// Sub-route
-
-const SubRouteBrand = Symbol("SubRoute");
-
-export type SubRouteNode<T extends Record<string, any>> = T & {
-  readonly [SubRouteBrand]: true;
-};
-
-function isSubRouteNode(value: unknown): value is SubRouteNode<any> {
-  return typeof value === "object" && value !== null && SubRouteBrand in value;
-}
-
-export function subRoute<T extends Record<string, any>>(tree: T): SubRouteNode<T> {
-  return { ...tree, [SubRouteBrand]: true } as SubRouteNode<T>;
-}
-
 // Registration
 
 function registerSingle(
@@ -108,19 +92,23 @@ function registerSingle(
   });
 }
 
+export interface HttpFunctionDefinitionTree {
+  [key: string]: HttpFunctionDefinition<any, any> | HttpFunctionDefinitionTree;
+};
+
 export function registerAll(
   app: typeof App,
-  tree: Record<string, HttpFunctionDefinition<any, any> | SubRouteNode<any>>,
+  tree: HttpFunctionDefinitionTree,
   namePrefix = "",
   routePrefix = "",
 ): void {
   for (const [key, value] of Object.entries(tree)) {
     const name = namePrefix ? `${namePrefix}-${key}` : key;
     const route = routePrefix ? `${routePrefix}/${key}` : key;
-    if (isSubRouteNode(value)) {
-      registerAll(app, value as any, name, route);
-    } else if (isHttpFunctionDefinition(value)) {
+    if (isHttpFunctionDefinition(value)) {
       registerSingle(app, name, route, value);
+    } else {
+      registerAll(app, value, name, route);
     }
   }
 }

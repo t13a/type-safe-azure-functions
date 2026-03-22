@@ -184,7 +184,7 @@ export const authMe = http({
 
 ## Nested definition maps
 
-Definition maps can be nested using `subRoute()` to create path-based routing. `registerAll` traverses the tree and generates routes from the key hierarchy:
+Definition maps can be nested to create path-based routing. `registerAll` traverses the tree and generates routes from the key hierarchy:
 
 ```typescript
 // functions/management/index.ts
@@ -192,10 +192,8 @@ import { showStats } from "./show-stats.js";
 export const defs = { showStats } as const;
 
 // functions/index.ts
-import { subRoute } from "../lib/http-function-v2/index.js";
-import { defs as managementDefs } from "./management/index.js";
+import { defs as management } from "./management/index.js";
 
-const management = subRoute(managementDefs);
 export const defs = { management, listTodos, createTodo, authMe } as const;
 ```
 

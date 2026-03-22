@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { http, registerAll, subRoute } from "./core.js";
+import { http, registerAll } from "./core.js";
 import type {
   app as App,
   HttpRequest,
@@ -73,14 +73,6 @@ describe("http", () => {
   });
 });
 
-describe("subRoute", () => {
-  it("creates a sub-route node wrapping a tree", () => {
-    const leaf = http({ handler: async () => ({ jsonBody: "ok" }) });
-    const node = subRoute({ leaf });
-    expect(node.leaf).toBe(leaf);
-  });
-});
-
 describe("registerAll", () => {
   it("registers flat definitions with correct routes and names", () => {
     const { app, registered } = mockApp();
@@ -100,7 +92,7 @@ describe("registerAll", () => {
     const leaf = http({ handler: async () => ({ jsonBody: "leaf" }) });
 
     registerAll(app, {
-      admin: subRoute({ stats: leaf }),
+      admin: { stats: leaf },
     });
 
     expect(registered.size).toBe(1);
@@ -112,7 +104,7 @@ describe("registerAll", () => {
     const leaf = http({ handler: async () => ({ jsonBody: "deep" }) });
 
     registerAll(app, {
-      a: subRoute({ b: subRoute({ c: leaf }) }),
+      a: { b: { c: leaf } },
     });
 
     expect(registered.size).toBe(1);

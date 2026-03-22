@@ -1,8 +1,7 @@
-export { http, registerAll, subRoute } from "./core.js";
+export { http, registerAll } from "./core.js";
 export type {
   HttpFunctionDefinition,
   HttpHandlerWithParser,
-  SubRouteNode,
 } from "./core.js";
 
 export {
