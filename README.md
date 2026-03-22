@@ -67,8 +67,18 @@ package.json
 
 ```bash
 npm install
+npm run build        # Type-check and compile all packages (tsc -b)
 npm run dev
 ```
+
+## Type checking
+
+```bash
+npm run build        # One-shot type-check + compile
+npm run watch        # Continuous type-check across all packages (tsc -b -w)
+```
+
+`npm test` (Vitest) does **not** include type checking. Run `npm run build` or `npm run watch` separately to catch type errors across package boundaries.
 
 ## Running tests
 

@@ -35,7 +35,7 @@ const requireAuth = (async (c) => {
 export const authMe = defineHttp({
   middleware: combineMiddleware([requireAuth, defaultMiddleware]),
   handler: async (c) => {
-    const user = c.vars.get(userKey);
+    const user = c.vars.get(userKey)!;
     return { status: 200, jsonBody: user } as const;
   },
 });

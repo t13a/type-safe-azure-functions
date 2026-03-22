@@ -2,7 +2,8 @@
   "private": true,
   "scripts": {
     "dev": "npm run dev -w packages/api",
-    "build": "npm run build -w packages/api",
+    "build": "tsc -b",
+    "watch": "tsc -b -w",
     "test": "npm run test --workspaces",
     "test:int": "npm run test:int -w packages/client"
   },
