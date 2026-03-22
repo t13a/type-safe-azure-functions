@@ -5,11 +5,12 @@ import {
   createVariableKey,
   createVars,
   defaultMiddleware,
-  defineHttp,
-  registerHttpAll,
+  withDefaultMiddleware,
+  withMiddleware,
   type HttpMiddleware,
   type HttpMiddlewareNext,
-} from "./http-function.js";
+} from "./middleware.js";
+import { http, registerAll } from "./core.js";
 import type {
   app as App,
   HttpRequest,
@@ -70,44 +71,12 @@ describe("createVariableKey / createVars", () => {
   });
 });
 
-describe("defineHttp", () => {
-  it("uses defaultMiddleware when no middleware specified", () => {
-    const def = defineHttp({
-      handler: async () => ({ jsonBody: "ok" }),
-    });
-    expect(def.middleware).toBe(defaultMiddleware);
-    expect(def.parser).toBeUndefined();
-  });
-
-  it("stores custom middleware", () => {
-    const custom = (async (c) => {
-      await c.next();
-    }) satisfies HttpMiddleware;
-
-    const def = defineHttp({
-      middleware: custom,
-      handler: async () => ({ jsonBody: "ok" }),
-    });
-    expect(def.middleware).toBe(custom);
-  });
-
-  it("stores parser when provided", () => {
-    const schema = z.object({ x: z.number() });
-    const def = defineHttp({
-      parser: schema,
-      handler: async (c) => ({ jsonBody: c.parsed }),
-    });
-    expect(def.parser).toBe(schema);
-  });
-});
-
 describe("defaultMiddleware", () => {
   it("passes through handler result on success", async () => {
     const expected = { jsonBody: { ok: true } };
     const next: HttpMiddlewareNext = async () => expected;
     const vars = createVars();
     const result = await defaultMiddleware({ request: mockRequest(), context: mockContext(), vars, next });
-    // defaultMiddleware returns void on success (result comes via side-channel)
     expect(result).toBeUndefined();
   });
 
@@ -202,97 +171,43 @@ describe("combineMiddleware", () => {
   });
 });
 
-describe("registerHttpAll", () => {
-  it("registers flat definitions with correct routes and names", () => {
-    const { app, registered } = mockApp();
-    const def1 = defineHttp({ handler: async () => ({ jsonBody: "a" }) });
-    const def2 = defineHttp({ handler: async () => ({ jsonBody: "b" }) });
-
-    registerHttpAll(app, { foo: def1, bar: def2 });
-
-    expect(registered.size).toBe(2);
-    expect(registered.get("foo")?.route).toBe("foo");
-    expect(registered.get("bar")?.route).toBe("bar");
-    expect(registered.get("foo")?.methods).toEqual(["POST"]);
-  });
-
-  it("does not confuse a nested tree key named 'handler' with a definition", () => {
-    const { app, registered } = mockApp();
-    const leaf = defineHttp({ handler: async () => ({ jsonBody: "leaf" }) });
-
-    registerHttpAll(app, {
-      handler: leaf,
-    });
-
-    expect(registered.size).toBe(1);
-    expect(registered.get("handler")?.route).toBe("handler");
-  });
-
-  it("registers nested definitions with prefixed routes and names", () => {
-    const { app, registered } = mockApp();
-    const leaf = defineHttp({ handler: async () => ({ jsonBody: "leaf" }) });
-
-    registerHttpAll(app, {
-      admin: { stats: leaf },
-    });
-
-    expect(registered.size).toBe(1);
-    expect(registered.get("admin-stats")?.route).toBe("admin/stats");
-  });
-});
-
-describe("handler integration", () => {
+describe("withMiddleware", () => {
   it("parses body with parser and passes to handler", async () => {
-    const { app, registered } = mockApp();
-    const def = defineHttp({
-      parser: z.object({ name: z.string() }),
-      handler: async (c) => ({
-        jsonBody: { greeting: `Hello ${c.parsed.name}` },
-      }),
-    });
+    const schema = z.object({ name: z.string() });
+    const wrapped = withMiddleware([defaultMiddleware], async (c) => ({
+      jsonBody: { greeting: `Hello ${c.parsed.name}` },
+    }));
 
-    registerHttpAll(app, { greet: def });
-    const handler = registered.get("greet")!.handler;
-    const result = await handler(mockRequest({ name: "World" }), mockContext());
+    const result = await wrapped(mockRequest({ name: "World" }), mockContext(), schema);
     expect(result).toEqual({ jsonBody: { greeting: "Hello World" } });
   });
 
   it("returns handler result when no parser", async () => {
-    const { app, registered } = mockApp();
-    const def = defineHttp({
-      handler: async () => ({ jsonBody: { ok: true } }),
-    });
+    const wrapped = withMiddleware([defaultMiddleware], async () => ({
+      jsonBody: { ok: true },
+    }));
 
-    registerHttpAll(app, { health: def });
-    const handler = registered.get("health")!.handler;
-    const result = await handler(mockRequest(), mockContext());
+    const result = await wrapped(mockRequest(), mockContext(), undefined as any);
     expect(result).toEqual({ jsonBody: { ok: true } });
   });
 
   it("returns 400 when body fails validation", async () => {
-    const { app, registered } = mockApp();
-    const def = defineHttp({
-      parser: z.object({ count: z.number() }),
-      handler: async (c) => ({ jsonBody: c.parsed }),
-    });
+    const schema = z.object({ count: z.number() });
+    const wrapped = withMiddleware([defaultMiddleware], async (c) => ({
+      jsonBody: c.parsed,
+    }));
 
-    registerHttpAll(app, { nums: def });
-    const handler = registered.get("nums")!.handler;
-    const result = await handler(mockRequest({ count: "nope" }), mockContext());
+    const result = await wrapped(mockRequest({ count: "nope" }), mockContext(), schema);
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 
   it("returns 400 when body is not valid JSON", async () => {
-    const { app, registered } = mockApp();
-    const def = defineHttp({
-      parser: z.object({ x: z.number() }),
-      handler: async (c) => ({ jsonBody: c.parsed }),
-    });
+    const schema = z.object({ x: z.number() });
+    const wrapped = withMiddleware([defaultMiddleware], async (c) => ({
+      jsonBody: c.parsed,
+    }));
 
-    registerHttpAll(app, { parse: def });
-    const handler = registered.get("parse")!.handler;
-    // mockRequest with undefined body throws SyntaxError from json()
-    const result = await handler(mockRequest(undefined), mockContext());
+    const result = await wrapped(mockRequest(undefined), mockContext(), schema);
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 
@@ -303,17 +218,11 @@ describe("handler integration", () => {
       await c.next();
     }) satisfies HttpMiddleware;
 
-    const { app, registered } = mockApp();
-    const def = defineHttp({
-      middleware: combineMiddleware([setTenant, defaultMiddleware]),
-      handler: async (c) => ({
-        jsonBody: { tenant: c.vars.get(key) },
-      }),
-    });
+    const wrapped = withMiddleware([setTenant, defaultMiddleware], async (c) => ({
+      jsonBody: { tenant: c.vars.get(key) },
+    }));
 
-    registerHttpAll(app, { tenanted: def });
-    const handler = registered.get("tenanted")!.handler;
-    const result = await handler(mockRequest(), mockContext());
+    const result = await wrapped(mockRequest(), mockContext(), undefined as any);
     expect(result).toEqual({ jsonBody: { tenant: "acme" } });
   });
 
@@ -323,19 +232,51 @@ describe("handler integration", () => {
       return { status: 401 as const, jsonBody: { message: "No" } };
     }) satisfies HttpMiddleware;
 
-    const { app, registered } = mockApp();
-    const def = defineHttp({
-      middleware: blocker,
-      handler: async () => {
-        handlerSpy();
-        return { jsonBody: "never" };
-      },
+    const wrapped = withMiddleware([blocker], async () => {
+      handlerSpy();
+      return { jsonBody: "never" };
     });
 
-    registerHttpAll(app, { blocked: def });
-    const handler = registered.get("blocked")!.handler;
-    const result = await handler(mockRequest(), mockContext());
+    const result = await wrapped(mockRequest(), mockContext(), undefined as any);
     expect(result).toMatchObject({ status: 401 });
     expect(handlerSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("withDefaultMiddleware", () => {
+  it("is equivalent to withMiddleware([defaultMiddleware], handler)", async () => {
+    const wrapped = withDefaultMiddleware(async () => ({
+      jsonBody: { ok: true },
+    }));
+
+    const result = await wrapped(mockRequest(), mockContext(), undefined as any);
+    expect(result).toEqual({ jsonBody: { ok: true } });
+  });
+
+  it("catches ZodError and returns 400", async () => {
+    const schema = z.object({ x: z.number() });
+    const wrapped = withDefaultMiddleware(async (c) => ({
+      jsonBody: c.parsed,
+    }));
+
+    const result = await wrapped(mockRequest({ x: "bad" }), mockContext(), schema);
+    expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
+  });
+});
+
+describe("handler integration (end-to-end)", () => {
+  it("works with http() + withMiddleware + registerAll", async () => {
+    const { app, registered } = mockApp();
+    const def = http({
+      parser: z.object({ name: z.string() }),
+      handler: withDefaultMiddleware(async (c) => ({
+        jsonBody: { greeting: `Hello ${c.parsed.name}` },
+      })),
+    });
+
+    registerAll(app, { greet: def });
+    const handler = registered.get("greet")!.handler;
+    const result = await handler(mockRequest({ name: "World" }), mockContext());
+    expect(result).toEqual({ jsonBody: { greeting: "Hello World" } });
   });
 });

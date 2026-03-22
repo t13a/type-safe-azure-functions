@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { defineHttp } from "../lib/http-function.js";
+import { http, withDefaultMiddleware } from "../lib/http-function-v2/index.js";
 
-export const createTodo = defineHttp({
+export const createTodo = http({
   parser: z.object({
     title: z.string().min(1),
     completed: z.boolean().optional().default(false),
   }),
-  handler: async (c) => {
+  handler: withDefaultMiddleware(async (c) => {
     c.context.log(`Creating todo: ${c.parsed.title}`);
 
     return {
@@ -16,5 +16,5 @@ export const createTodo = defineHttp({
         completed: c.parsed.completed,
       },
     };
-  },
+  }),
 });

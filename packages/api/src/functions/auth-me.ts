@@ -1,10 +1,10 @@
 import {
-  combineMiddleware,
+  http,
+  withMiddleware,
   createVariableKey,
   defaultMiddleware,
-  defineHttp,
-  HttpMiddleware,
-} from "../lib/http-function.js";
+  type HttpMiddleware,
+} from "../lib/http-function-v2/index.js";
 
 type User = { name: string };
 
@@ -32,10 +32,9 @@ const requireAuth = (async (c) => {
   await c.next();
 }) satisfies HttpMiddleware;
 
-export const authMe = defineHttp({
-  middleware: combineMiddleware([requireAuth, defaultMiddleware]),
-  handler: async (c) => {
+export const authMe = http({
+  handler: withMiddleware([requireAuth, defaultMiddleware], async (c) => {
     const user = c.vars.get(userKey)!;
     return { status: 200, jsonBody: user } as const;
-  },
+  }),
 });

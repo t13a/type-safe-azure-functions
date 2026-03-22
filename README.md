@@ -7,9 +7,9 @@ Type-safe API communication for Azure Functions v4, inspired by [Hono RPC](https
 ## How it works
 
 ```
-defineHttp()              →  Handler + middleware + validation in one place (no side effects)
+http()                    →  Handler + validation in one place (no side effects)
   ↓
-registerHttpAll(app, ...) →  Registers with app.http() at startup (path-based routing from definition tree)
+registerAll(app, ...)     →  Registers with app.http() at startup (path-based routing from definition tree)
   ↓
 createClient(baseUrl)     →  Typed client, response types flow automatically
 ```
@@ -26,7 +26,7 @@ This library trades full Azure Functions compatibility for simplicity. The follo
 | Route | `/api/{path}` (derived from definition tree keys) |
 | Request format | JSON body + HTTP headers (no URL path/query params) |
 
-`methods` and `route` are excluded from `defineHttp` options — specifying them is a compile error. If you need custom routing or other HTTP methods, use `app.http()` directly.
+`methods` and `route` are excluded from `http()` options — specifying them is a compile error. If you need custom routing or other HTTP methods, use `app.http()` directly.
 
 ## Project structure
 
@@ -43,8 +43,12 @@ packages/
 │   │   │   ├── index.ts                  # Root definition map (shared by server and client)
 │   │   │   └── list-todos.ts
 │   │   ├── lib/
-│   │   │   └── http-function.ts          # Core functions, utilities, types
-│   │   │   └── http-function.test.ts
+│   │   │   └── http-function-v2/
+│   │   │       ├── index.ts              # Barrel re-export
+│   │   │       ├── core.ts               # Endpoint definition, routing, registration
+│   │   │       ├── core.test.ts
+│   │   │       ├── middleware.ts          # Middleware, vars, withMiddleware
+│   │   │       └── middleware.test.ts
 │   │   ├── app.ts                        # Azure Functions entry point
 │   │   └── index.ts                      # Re-exports definition map, types
 │   └── package.json
@@ -93,18 +97,18 @@ npm run test:int     # terminal 2
 
 ## Defining functions
 
-Use `defineHttp()` to declare a handler with its validation schema. The function name used in `functions/index.ts` becomes both the Azure Functions name and the client method name.
+Use `http()` to declare an endpoint with its validation schema. The function name used in `functions/index.ts` becomes both the Azure Functions name and the client method name.
 
 ```typescript
 import { z } from "zod";
-import { defineHttp } from "../lib/http-function.js";
+import { http, withDefaultMiddleware } from "../lib/http-function-v2/index.js";
 
-export const createTodo = defineHttp({
+export const createTodo = http({
   parser: z.object({
     title: z.string().min(1),
     completed: z.boolean().optional().default(false),
   }),
-  handler: async (c) => {
+  handler: withDefaultMiddleware(async (c) => {
     c.context.log(`Creating todo: ${c.parsed.title}`);
 
     return {
@@ -114,27 +118,28 @@ export const createTodo = defineHttp({
         completed: c.parsed.completed,
       },
     };
-  },
+  }),
 });
 ```
 
-- Handler receives a single context object `c` with `request`, `context`, `vars`, and `parsed` properties
+- `http()` defines an endpoint. The `handler` receives `(request, context, parser)` — but when wrapped with `withDefaultMiddleware` or `withMiddleware`, the handler receives a context object `c` with `request`, `context`, `vars`, and `parsed` properties instead
 - `parser` takes a Zod schema directly — the parsed result is available via `c.parsed`
 - When `parser` is omitted, `c.parsed` is typed as `void`
+- `withDefaultMiddleware(handler)` is a shortcut for `withMiddleware([defaultMiddleware], handler)` — it handles `ZodError` (400), `SyntaxError` (400), and unhandled exceptions (500)
 - The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler` — those are controlled by the framework. `authLevel`, `retry`, and other options work as-is.
 
 ## Middleware
 
-Each function can define its own middleware. Middleware wraps the handler and can short-circuit the request (e.g. return 401) or delegate to the handler via `next()`.
+Middleware wraps the handler and can short-circuit the request (e.g. return 401) or delegate to the handler via `next()`. Use `withMiddleware([...], handler)` to compose middlewares with a handler.
 
 ```typescript
 import {
-  combineMiddleware,
+  http,
+  withMiddleware,
   createVariableKey,
   defaultMiddleware,
-  defineHttp,
-  HttpMiddleware,
-} from "../lib/http-function.js";
+  type HttpMiddleware,
+} from "../lib/http-function-v2/index.js";
 
 type User = { name: string };
 
@@ -162,26 +167,24 @@ const requireAuth = (async (c) => {
   await c.next();
 }) satisfies HttpMiddleware;
 
-export const authMe = defineHttp({
-  middleware: combineMiddleware([requireAuth, defaultMiddleware]),
-  handler: async (c) => {
+export const authMe = http({
+  handler: withMiddleware([requireAuth, defaultMiddleware], async (c) => {
     const user = c.vars.get(userKey)!;
     return { status: 200, jsonBody: user } as const;
-  },
+  }),
 });
 ```
 
 - Middleware receives a single context object `c` with `request`, `context`, `vars`, and `next` properties
 - `c.vars` is a typed key-value store (`createVariableKey<T>()`) for passing data between middleware and handlers
-- When `middleware` is omitted, `defaultMiddleware` is used (returns 400 for `ZodError`, 500 for unhandled exceptions)
 - Middleware can return its own response to short-circuit, or call `c.next()` to invoke the handler
 - Middleware cannot modify the handler's response (read-only) — return `void` or your own response
 - The middleware's return type is inferred and included in the client's response type union, so status code narrowing works for custom error shapes too
-- Use `combineMiddleware([...])` to compose multiple middlewares — they execute in order, and the combined response type is the union of all middlewares' return types
+- Use `withMiddleware([m1, m2, ...], handler)` to compose multiple middlewares — they execute in order, and the combined response type is the union of all middlewares' return types
 
 ## Nested definition maps
 
-Definition maps can be nested to create path-based routing. `registerHttpAll` traverses the tree and generates routes from the key hierarchy:
+Definition maps can be nested using `subRoute()` to create path-based routing. `registerAll` traverses the tree and generates routes from the key hierarchy:
 
 ```typescript
 // functions/management/index.ts
@@ -189,7 +192,10 @@ import { showStats } from "./show-stats.js";
 export const defs = { showStats } as const;
 
 // functions/index.ts
-import { defs as management } from "./management/index.js";
+import { subRoute } from "../lib/http-function-v2/index.js";
+import { defs as managementDefs } from "./management/index.js";
+
+const management = subRoute(managementDefs);
 export const defs = { management, listTodos, createTodo, authMe } as const;
 ```
 
@@ -204,14 +210,14 @@ const res = await client.management.showStats();
 Side effects are isolated to `app.ts`, the Azure Functions entry point:
 
 ```typescript
-import { registerHttpAll } from "./lib/http-function.js";
+import { registerAll } from "./lib/http-function-v2/index.js";
 import { defs } from "./functions/index.js";
 import { app } from "@azure/functions";
 
-registerHttpAll(app, defs);
+registerAll(app, defs);
 ```
 
-`registerHttpAll` takes the `app` instance as its first argument, keeping the module itself side-effect free. The definition map in `functions/index.ts` is shared between server registration and the client.
+`registerAll` takes the `app` instance as its first argument, keeping the module itself side-effect free. The definition map in `functions/index.ts` is shared between server registration and the client.
 
 ## Client usage
 
@@ -255,7 +261,7 @@ Headers are passed as `HeadersInit` (the standard fetch type) — `Record<string
 
 ## Adding a new endpoint
 
-1. Create a new file in `packages/api/src/functions/` with `defineHttp()`
+1. Create a new file in `packages/api/src/functions/` with `http()`
 2. Add it to the definition map in `functions/index.ts`
 3. Done — the client picks it up automatically
 
