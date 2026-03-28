@@ -136,11 +136,12 @@ import { app } from "@azure/functions";
 registerAll(app, defs);
 ```
 
-Routes and HTTP methods are derived from the definition tree:
+Routes and HTTP methods are derived from the definition tree. Definitions with `parser.body` become `POST`, all others become `GET`:
 
 ```
-createTodo        → POST /api/createTodo
-getTodos          → GET  /api/getTodos
+createTodo        → POST /api/createTodo   (has parser.body)
+getTodos          → GET  /api/getTodos     (no parser.body)
+authMe            → GET  /api/authMe       (no parser)
 ```
 
 ### 3. Call from the client
@@ -233,7 +234,7 @@ export const authMe = http({
 
 | Option | Behavior |
 |---|---|
-| `methods` | Not configurable. `GET` for keys starting with `get`, otherwise `POST` |
+| `methods` | Not configurable. `POST` if `parser.body` is defined, otherwise `GET` |
 | `route` | Not configurable. Derived from definition tree keys (e.g. `/api/getTodos`) |
 | `parser` | `{ query?, body? }` — Zod schemas for URL query params and/or request body |
 | `handler` | Required. Wrapped with `withMiddleware` or `withCatchError` |
@@ -301,9 +302,9 @@ const res = await client.management.getStats();
 
 ### Client behavior
 
-The client automatically determines the HTTP method from the endpoint name:
-- Names starting with `get` → `GET` request: query params are serialized into the URL, no request body is sent
-- All other names → `POST` request: input is JSON-serialized as the request body
+The client automatically determines the HTTP method from the input:
+- When `body` is provided → `POST` request: body is JSON-serialized, query params are also supported
+- When `body` is omitted → `GET` request: query params are serialized into the URL, no request body is sent
 
 For `GET` endpoints, the `query` field in the client input maps directly to URL query parameters. If all fields in the query schema are optional, `input` itself is also optional. If any field is required, the caller must provide `query`.
 

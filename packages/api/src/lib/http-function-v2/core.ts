@@ -120,7 +120,7 @@ export function registerAll(
     const name = namePrefix ? `${namePrefix}-${key}` : key;
     const route = routePrefix ? `${routePrefix}/${key}` : key;
     if (isHttpFunctionDefinition(value)) {
-      const method = key.startsWith("get") ? "GET" : "POST";
+      const method = value.parser?.body !== undefined ? "POST" : "GET";
       register(app, name, method, route, value);
     } else {
       registerAll(app, value, name, route);

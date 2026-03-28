@@ -51,9 +51,9 @@ describe("path building", () => {
 });
 
 describe("POST request construction", () => {
-  it("sends POST with JSON content-type by default", async () => {
-    const client = createHttpFunctionClient<Defs>("http://example.com");
-    await client.foo();
+  it("sends POST with JSON content-type when body is provided", async () => {
+    const client = createHttpFunctionClient<DefsWithBody>("http://example.com");
+    await client.foo({ body: { title: "hello" } });
     const [, init] = mockFetch.mock.calls[0];
     expect(init?.method).toBe("POST");
     const headers = new Headers(init?.headers as HeadersInit);
@@ -66,34 +66,27 @@ describe("POST request construction", () => {
     const [, init] = mockFetch.mock.calls[0];
     expect(init?.body).toBe(JSON.stringify({ title: "hello" }));
   });
-
-  it("sends empty object when body is omitted", async () => {
-    const client = createHttpFunctionClient<Defs>("http://example.com");
-    await client.foo();
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init?.body).toBe(JSON.stringify({}));
-  });
 });
 
 describe("GET request construction", () => {
-  it("sends GET request for top-level method starting with 'get'", async () => {
-    const client = createHttpFunctionClient<DefsWithQuery>("http://example.com");
-    await client.getTodos();
+  it("sends GET when no body is provided", async () => {
+    const client = createHttpFunctionClient<Defs>("http://example.com");
+    await client.foo();
     const [, init] = mockFetch.mock.calls[0];
     expect(init?.method).toBe("GET");
   });
 
   it("does not send Content-Type header for GET requests", async () => {
-    const client = createHttpFunctionClient<DefsWithQuery>("http://example.com");
-    await client.getTodos();
+    const client = createHttpFunctionClient<Defs>("http://example.com");
+    await client.foo();
     const [, init] = mockFetch.mock.calls[0];
     const headers = new Headers(init?.headers as HeadersInit);
     expect(headers.get("content-type")).toBeNull();
   });
 
   it("does not send a body for GET requests", async () => {
-    const client = createHttpFunctionClient<DefsWithQuery>("http://example.com");
-    await client.getTodos();
+    const client = createHttpFunctionClient<Defs>("http://example.com");
+    await client.foo();
     const [, init] = mockFetch.mock.calls[0];
     expect(init?.body).toBeUndefined();
   });
@@ -111,20 +104,12 @@ describe("GET request construction", () => {
     const [url] = mockFetch.mock.calls[0];
     expect(url).toBe("http://example.com/api/getTodos");
   });
-
-  it("sends GET for nested method starting with 'get'", async () => {
-    type NestedGetDefs = { management: { getStats: Def } };
-    const client = createHttpFunctionClient<NestedGetDefs>("http://example.com");
-    await client.management.getStats();
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init?.method).toBe("GET");
-  });
 });
 
 describe("header merging", () => {
   it("merges user headers with default content-type for POST", async () => {
-    const client = createHttpFunctionClient<Defs>("http://example.com");
-    await client.foo({ headers: { authorization: "Bearer token" } });
+    const client = createHttpFunctionClient<DefsWithBody>("http://example.com");
+    await client.foo({ body: { title: "hello" }, headers: { authorization: "Bearer token" } });
     const [, init] = mockFetch.mock.calls[0];
     const headers = new Headers(init?.headers as HeadersInit);
     expect(headers.get("content-type")).toBe("application/json");
@@ -132,16 +117,16 @@ describe("header merging", () => {
   });
 
   it("allows user to override content-type for POST", async () => {
-    const client = createHttpFunctionClient<Defs>("http://example.com");
-    await client.foo({ headers: { "Content-Type": "text/plain" } });
+    const client = createHttpFunctionClient<DefsWithBody>("http://example.com");
+    await client.foo({ body: { title: "hello" }, headers: { "Content-Type": "text/plain" } });
     const [, init] = mockFetch.mock.calls[0];
     const headers = new Headers(init?.headers as HeadersInit);
     expect(headers.get("content-type")).toBe("text/plain");
   });
 
   it("merges user headers for GET requests", async () => {
-    const client = createHttpFunctionClient<DefsWithQuery>("http://example.com");
-    await client.getTodos({ headers: { authorization: "Bearer token" } });
+    const client = createHttpFunctionClient<Defs>("http://example.com");
+    await client.foo({ headers: { authorization: "Bearer token" } });
     const [, init] = mockFetch.mock.calls[0];
     const headers = new Headers(init?.headers as HeadersInit);
     expect(headers.get("authorization")).toBe("Bearer token");

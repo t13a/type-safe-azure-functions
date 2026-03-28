@@ -85,19 +85,20 @@ describe("registerAll", () => {
     expect(registered.size).toBe(2);
     expect(registered.get("foo")?.route).toBe("foo");
     expect(registered.get("bar")?.route).toBe("bar");
-    expect(registered.get("foo")?.methods).toEqual(["POST"]);
+    expect(registered.get("foo")?.methods).toEqual(["GET"]);
   });
 
-  it("registers GET for keys starting with 'get'", () => {
+  it("registers GET for definitions without body parser", () => {
     const { app, registered } = mockApp();
     const def = http({ handler: async () => ({ jsonBody: "ok" }) });
 
-    registerAll(app, { getTodos: def });
+    registerAll(app, { getTodos: def, listTodos: def });
 
     expect(registered.get("getTodos")?.methods).toEqual(["GET"]);
+    expect(registered.get("listTodos")?.methods).toEqual(["GET"]);
   });
 
-  it("registers GET for nested keys starting with 'get'", () => {
+  it("registers GET for nested definitions without body parser", () => {
     const { app, registered } = mockApp();
     const def = http({ handler: async () => ({ jsonBody: "ok" }) });
 
@@ -107,14 +108,16 @@ describe("registerAll", () => {
     expect(registered.get("management-getStats")?.route).toBe("management/getStats");
   });
 
-  it("registers POST for non-get keys", () => {
+  it("registers POST for definitions with body parser", () => {
     const { app, registered } = mockApp();
-    const def = http({ handler: async () => ({ jsonBody: "ok" }) });
+    const def = http({
+      parser: { body: z.object({ title: z.string() }) },
+      handler: async () => ({ jsonBody: "ok" }),
+    });
 
-    registerAll(app, { createTodo: def, listTodos: def });
+    registerAll(app, { createTodo: def });
 
     expect(registered.get("createTodo")?.methods).toEqual(["POST"]);
-    expect(registered.get("listTodos")?.methods).toEqual(["POST"]);
   });
 
   it("registers nested definitions via subRoute with prefixed routes and names", () => {

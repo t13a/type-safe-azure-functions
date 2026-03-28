@@ -48,19 +48,18 @@ export function createHttpFunctionClient<T extends Record<string, any>>(
       }
     }
 
-    const lastSegment = pathPrefix.split("/").at(-1) ?? "";
-    if (lastSegment.startsWith("get")) {
-      return fetch(url.toString(), {
-        method: "GET",
-        headers: new Headers(input?.headers),
-      });
-    } else {
+    if (input?.body !== undefined) {
       const headers = new Headers({ "Content-Type": "application/json" });
       new Headers(input?.headers).forEach((v, k) => headers.set(k, v));
       return fetch(url.toString(), {
         method: "POST",
         headers,
-        body: JSON.stringify(input?.body ?? {}),
+        body: JSON.stringify(input.body),
+      });
+    } else {
+      return fetch(url.toString(), {
+        method: "GET",
+        headers: new Headers(input?.headers),
       });
     }
   };
