@@ -1,73 +1,37 @@
 # Type-safe Azure Functions
 
-> If you can use Hono, use Hono. This exists because some of us are not that fortunate.
-
 Type-safe API communication for Azure Functions v4, inspired by [Hono RPC](https://hono.dev/docs/guides/rpc) and [Astro Actions](https://docs.astro.build/en/guides/actions/). Response types are inferred from handler implementations — no hand-written response schemas needed.
 
-## How it works
+## Overview
 
-```
-http()                    →  Handler + validation in one place (no side effects)
-  ↓
-registerAll(app, ...)     →  Registers with app.http() at startup (path-based routing from definition tree)
-  ↓
-createClient(baseUrl)     →  Typed client, response types flow automatically
+Define a handler on the server — the client gets type-safe access automatically:
+
+```typescript
+// Server: define an endpoint
+export const getGreeting = http({
+  handler: withCatchError(async () => {
+    return { jsonBody: { message: "Hello!" } };
+  }),
+});
+
+// Client: response type is inferred
+const res = await client.getGreeting();
+if (res.status === 200) {
+  const data = await res.json();
+  // data: { message: string }
+}
 ```
 
 Change the handler's return value and TypeScript will flag mismatches on both server and client. No code generation required.
 
-## Design constraints
+## Getting started
 
-This library trades full Azure Functions compatibility for simplicity. The following conventions are fixed and cannot be overridden:
-
-| Constraint | Value |
-|---|---|
-| HTTP method | `GET` for endpoints whose key starts with `get`, otherwise `POST` |
-| Route | `/api/{path}` (derived from definition tree keys) |
-| Request format | JSON body (`body`) and/or URL query params (`query`) |
-
-`methods` and `route` are excluded from `http()` options — specifying them is a compile error. If you need custom routing or other HTTP methods, use `app.http()` directly.
-
-## Project structure
-
-```
-packages/
-├── api/
-│   ├── src/
-│   │   ├── functions/
-│   │   │   ├── management/
-│   │   │   │   ├── index.ts              # Nested definition map
-│   │   │   │   └── get-stats.ts
-│   │   │   ├── auth-me.ts
-│   │   │   ├── create-todo.ts
-│   │   │   ├── get-todos.ts
-│   │   │   └── index.ts                  # Root definition map (shared by server and client)
-│   │   ├── lib/
-│   │   │   └── http-function-v2/
-│   │   │       ├── index.ts              # Barrel re-export
-│   │   │       ├── core.ts               # Endpoint definition, routing, registration
-│   │   │       ├── core.test.ts
-│   │   │       ├── middleware.ts          # Middleware, vars, withMiddleware
-│   │   │       └── middleware.test.ts
-│   │   ├── app.ts                        # Azure Functions entry point
-│   │   └── index.ts                      # Re-exports definition map, types
-│   └── package.json
-└── client/                               # Usage example / integration tests
-    ├── src/
-    │   ├── lib/
-    │   │   ├── http-function-client.ts      # Generic typed fetch wrapper
-    │   │   └── http-function-client.test.ts
-    │   └── example.int.test.ts
-    └── package.json
-package.json
-```
-
-## Prerequisites
+### Prerequisites
 
 - Node.js 22
 - Azure Functions Core Tools v4 (`npm install -g azure-functions-core-tools@4`)
 
-## Quick start
+### Quick start
 
 ```bash
 npm install
@@ -75,47 +39,57 @@ npm run build        # Type-check and compile all packages (tsc -b)
 npm run dev
 ```
 
-## Type checking
+### Build & test commands
 
 ```bash
 npm run build        # One-shot type-check + compile
 npm run watch        # Continuous type-check across all packages (tsc -b -w)
+
+npm test             # Unit tests (no type-check — run build/watch separately)
+
+npm run dev          # Start dev server (terminal 1)
+npm run test:int     # Integration tests against dev server (terminal 2)
 ```
 
-`npm test` (Vitest) does **not** include type checking. Run `npm run build` or `npm run watch` separately to catch type errors across package boundaries.
+### Project structure
 
-## Running tests
-
-```bash
-# Unit tests (no server required)
-npm test
-
-# Integration tests (requires the dev server)
-npm run dev          # terminal 1
-npm run test:int     # terminal 2
+```
+packages/
+├── api/
+│   ├── src/
+│   │   ├── functions/
+│   │   │   ├── management/
+│   │   │   │   ├── index.ts              # Nested definition map (imported by ../index.ts)
+│   │   │   │   └── get-stats.ts
+│   │   │   ├── auth-me.ts
+│   │   │   ├── create-todo.ts
+│   │   │   ├── get-todos.ts
+│   │   │   └── index.ts                  # Definition map (type-shared with client)
+│   │   ├── lib/
+│   │   │   └── http-function-v2/
+│   │   │       ├── index.ts
+│   │   │       ├── core.ts
+│   │   │       ├── core.test.ts
+│   │   │       ├── middleware.ts
+│   │   │       └── middleware.test.ts
+│   │   ├── app.ts                        # Azure Functions entry point
+│   │   └── index.ts
+│   └── package.json
+└── client/
+    ├── src/
+    │   ├── lib/
+    │   │   ├── http-function-client.ts
+    │   │   └── http-function-client.test.ts
+    │   └── example.int.test.ts
+    └── package.json
+package.json
 ```
 
-## HTTP method convention
+## Usage
 
-Endpoint keys are used to determine the HTTP method: keys that start with `get` use `GET`, all others use `POST`. This is a convention — no explicit `method` option is needed.
+### 1. Define an endpoint
 
-```typescript
-export const defs = {
-  getTodos,          // → GET  /api/getTodos
-  createTodo,        // → POST /api/createTodo
-  management: {
-    getStats,        // → GET  /api/management/getStats
-  },
-} as const;
-```
-
-`GET` requests are cache-friendly. Whether responses are actually cached depends on the load balancer and application-level cache headers — the framework only sets the method.
-
-## Defining functions
-
-Use `http()` to declare an endpoint. The `parser` option accepts a `{ query?, body? }` object to validate URL query parameters and/or the request body independently. Either or both can be omitted.
-
-### POST endpoint with body validation
+Create a file in `packages/api/src/functions/`:
 
 ```typescript
 import { z } from "zod";
@@ -142,56 +116,71 @@ export const createTodo = http({
 });
 ```
 
-### GET endpoint with query parameter validation
+The `parser` option accepts `{ query?, body? }` to validate URL query parameters and/or the request body. `withCatchError` handles `ZodError` (400), `SyntaxError` (400), and unhandled exceptions (500).
 
-Query parameter values are always strings. Use Zod transforms or `z.coerce.*` to convert them to the appropriate type.
+### 2. Register it
 
-```typescript
-import { z } from "zod";
-import { http, withCatchError } from "../lib/http-function-v2/index.js";
-
-export const getTodos = http({
-  parser: {
-    query: z.object({
-      // z.string().transform(...).optional() keeps `undefined` distinct from `false`
-      completed: z.string().transform(s => s === "true").optional(),
-    }),
-  },
-  handler: withCatchError(async (c) => {
-    const todos = [ /* ... */ ];
-    const { completed } = c.parsed.query;
-    return {
-      jsonBody: completed === undefined ? todos : todos.filter(t => t.completed === completed),
-    };
-  }),
-});
-```
-
-### Combined query + body
+Add the endpoint to the definition map and it's done — the client picks it up automatically:
 
 ```typescript
-export const someEndpoint = http({
-  parser: {
-    query: z.object({ dryRun: z.string().transform(s => s === "true").optional() }),
-    body:  z.object({ title: z.string() }),
-  },
-  handler: withCatchError(async (c) => {
-    if (c.parsed.query.dryRun) return { jsonBody: { ok: true } };
-    // use c.parsed.body.title ...
-  }),
-});
+// functions/index.ts
+export const defs = { createTodo, getTodos, /* ... */ } as const;
 ```
 
-- When `parser` is omitted entirely, `c.parsed` is typed as `void`
-- When only `query` is provided, `c.parsed` is `{ query: ... }`
-- When only `body` is provided, `c.parsed` is `{ body: ... }`
-- When both are provided, `c.parsed` is `{ query: ..., body: ... }`
-- `withCatchError(handler)` is a shortcut for `withMiddleware([catchError], handler)` — it handles `ZodError` (400), `SyntaxError` (400), and unhandled exceptions (500)
-- The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler`. `authLevel`, `retry`, and other options work as-is.
+```typescript
+// app.ts — Azure Functions entry point (the only file with side effects)
+import { registerAll } from "./lib/http-function-v2/index.js";
+import { defs } from "./functions/index.js";
+import { app } from "@azure/functions";
 
-## Middleware
+registerAll(app, defs);
+```
 
-Middleware wraps the handler and can short-circuit the request (e.g. return 401) or delegate to the handler via `next()`. Use `withMiddleware([...], handler)` to compose middlewares with a handler.
+Routes and HTTP methods are derived from the definition tree:
+
+```
+createTodo        → POST /api/createTodo
+getTodos          → GET  /api/getTodos
+```
+
+### 3. Call from the client
+
+The client package takes `@my-app/api` as a `devDependency` — only type information is imported, with no runtime dependency on the Azure Functions SDK.
+
+```typescript
+import type { defs } from "@my-app/api";
+import { createHttpFunctionClient } from "./lib/http-function-client.js";
+
+const client = createHttpFunctionClient<typeof defs>("http://localhost:7071");
+
+// GET with optional query params
+const allTodos = await client.getTodos();
+const completedTodos = await client.getTodos({ query: { completed: "true" } });
+
+// POST with body (required)
+const res = await client.createTodo({ body: { title: "Buy milk" } });
+```
+
+Status codes narrow the response body type — this works for both handler return types and middleware return types:
+
+```typescript
+const res = await client.createTodo({ body: { title: "Buy milk" } });
+
+if (res.status === 200) {
+  const todo = await res.json();
+  // todo: { id: string; title: string; completed: boolean }
+} else if (res.status === 400) {
+  const err = await res.json();
+  // err: { message: string; errors: ZodError.flatten() result }
+} else {
+  const err = await res.json();
+  // err: { message: string }
+}
+```
+
+### Middleware
+
+Middleware wraps the handler and can short-circuit the request (e.g. return 401) or delegate to the handler via `next()`.
 
 ```typescript
 import {
@@ -199,7 +188,7 @@ import {
   withMiddleware,
   createVariableKey,
   catchError,
-  type HttpMiddleware,
+  type Middleware,
 } from "../lib/http-function-v2/index.js";
 
 type User = { name: string };
@@ -226,7 +215,7 @@ const requireAuth = (async (c) => {
   }
   c.vars.set(userKey, user);
   await c.next();
-}) satisfies HttpMiddleware;
+}) satisfies Middleware;
 
 export const authMe = http({
   handler: withMiddleware([requireAuth, catchError], async (c) => {
@@ -236,14 +225,51 @@ export const authMe = http({
 });
 ```
 
-- Middleware receives a single context object `c` with `request`, `context`, `vars`, and `next` properties
-- `c.vars` is a typed key-value store (`createVariableKey<T>()`) for passing data between middleware and handlers
-- Middleware can return its own response to short-circuit, or call `c.next()` to invoke the handler
-- Middleware cannot modify the handler's response (read-only) — return `void` or your own response
-- The middleware's return type is inferred and included in the client's response type union, so status code narrowing works for custom error shapes too
-- Use `withMiddleware([m1, m2, ...], handler)` to compose multiple middlewares — they execute in order, and the combined response type is the union of all middlewares' return types
+## Reference
 
-## Nested definition maps
+### `http()` options
+
+`http()` accepts any `HttpFunctionOptions` from `@azure/functions` with the following restrictions:
+
+| Option | Behavior |
+|---|---|
+| `methods` | Not configurable. `GET` for keys starting with `get`, otherwise `POST` |
+| `route` | Not configurable. Derived from definition tree keys (e.g. `/api/getTodos`) |
+| `parser` | `{ query?, body? }` — Zod schemas for URL query params and/or request body |
+| `handler` | Required. Wrapped with `withMiddleware` or `withCatchError` |
+| Others | `authLevel`, `retry`, etc. work as-is |
+
+Specifying `methods` or `route` is a compile error. If you need custom routing or other HTTP methods, use `app.http()` directly.
+
+**`parser` and `c.parsed`:**
+
+| Parser | `c.parsed` type |
+|---|---|
+| omitted | `void` |
+| `{ query: schema }` | `{ query: z.infer<schema> }` |
+| `{ body: schema }` | `{ body: z.infer<schema> }` |
+| `{ query: ..., body: ... }` | `{ query: ..., body: ... }` |
+
+Query parameter values are always strings. Use Zod transforms or `z.coerce.*` to convert them:
+
+```typescript
+export const getTodos = http({
+  parser: {
+    query: z.object({
+      completed: z.string().transform(s => s === "true").optional(),
+    }),
+  },
+  handler: withCatchError(async (c) => {
+    const todos = [ /* ... */ ];
+    const { completed } = c.parsed.query;
+    return {
+      jsonBody: completed === undefined ? todos : todos.filter(t => t.completed === completed),
+    };
+  }),
+});
+```
+
+### Nested definition maps
 
 Definition maps can be nested to create path-based routing. `registerAll` traverses the tree and generates routes from the key hierarchy:
 
@@ -254,71 +280,26 @@ export const defs = { getStats } as const;
 
 // functions/index.ts
 import { defs as management } from "./management/index.js";
-
-export const defs = { management, getTodos, createTodo, authMe } as const;
+export const defs = { management, /* ... */ } as const;
 ```
 
-This registers `getStats` at `GET /api/management/getStats`. The client mirrors the same structure:
+The client mirrors the same structure:
 
 ```typescript
 const res = await client.management.getStats();
 ```
 
-## Registering functions
+### Middleware details
 
-Side effects are isolated to `app.ts`, the Azure Functions entry point:
+- Middleware receives a single context object `c` with `request`, `context`, `vars`, and `next` properties
+- `c.vars` is a typed key-value store (`createVariableKey<T>()`) for passing data between middleware and handlers
+- Middleware can return its own response to short-circuit, or call `c.next()` to invoke the handler
+- Middleware cannot modify the handler's response (read-only) — return `void` or your own response
+- The middleware's return type is inferred and included in the client's response type union, so status code narrowing works for custom error shapes too
+- Use `withMiddleware([m1, m2, ...], handler)` to compose multiple middlewares — they execute in order, and the combined response type is the union of all middlewares' return types
+- `withCatchError(handler)` is a shortcut for `withMiddleware([catchError], handler)`
 
-```typescript
-import { registerAll } from "./lib/http-function-v2/index.js";
-import { defs } from "./functions/index.js";
-import { app } from "@azure/functions";
-
-registerAll(app, defs);
-```
-
-`registerAll` takes the `app` instance as its first argument, keeping the module itself side-effect free. The definition map in `functions/index.ts` is shared between server registration and the client.
-
-## Client usage
-
-The client package takes `@my-app/api` as a `devDependency` — only type information is imported, with no runtime dependency on the Azure Functions SDK.
-
-```typescript
-import type { defs } from "@my-app/api";
-import { createHttpFunctionClient } from "./lib/http-function-client.js";
-
-const client = createHttpFunctionClient<typeof defs>("http://localhost:7071");
-
-// GET with optional query params
-const allTodos = await client.getTodos();
-const completedTodos = await client.getTodos({ query: { completed: "true" } });
-
-// POST with body (required)
-const res = await client.createTodo({ body: { title: "Buy milk" } });
-
-// Status code narrows the json() return type
-if (res.status === 200) {
-  const todo = await res.json();
-  // todo: { id: string; title: string; completed: boolean }
-} else if (res.status === 400) {
-  const err = await res.json();
-  // err: { message: string; errors: ZodError.flatten() result }
-} else {
-  const err = await res.json();
-  // err: { message: string }
-}
-
-// Middleware return types are also narrowed
-const authRes = await client.authMe({
-  headers: { authorization: "Bearer my-secret-token" },
-});
-if (authRes.status === 200) {
-  const user = await authRes.json();
-  // user: { name: string }
-} else if (authRes.status === 401) {
-  const err = await authRes.json();
-  // err: { message: string }
-}
-```
+### Client behavior
 
 The client automatically determines the HTTP method from the endpoint name:
 - Names starting with `get` → `GET` request: query params are serialized into the URL, no request body is sent
@@ -328,13 +309,7 @@ For `GET` endpoints, the `query` field in the client input maps directly to URL 
 
 Headers are passed as `HeadersInit` (the standard fetch type) — `Record<string, string>`, `Headers`, or `string[][]` all work. For `POST` requests, user-provided headers are merged with the default `Content-Type: application/json`, and user values take precedence.
 
-## Adding a new endpoint
-
-1. Create a new file in `packages/api/src/functions/` with `http()`
-2. Add it to the definition map in `functions/index.ts`
-3. Done — the client picks it up automatically
-
-## Response type inference
+### Response type inference
 
 The response type is inferred from what you return. The status code defaults to `200` when omitted:
 
@@ -345,10 +320,10 @@ The response type is inferred from what you return. The status code defaults to 
 | `{ body: "raw string" }` | `200` | `unknown` |
 | `{ status: 204 as const }` | `204` | `void` |
 
-## Why not X?
+### Why not X?
 
 **tRPC** — Brings its own router and middleware. Doesn't play well with `app.http()` + `InvocationContext`.
 
 **Hono RPC** — Great, but [hono-azurefunc-adapter](https://github.com/Marplex/hono-azurefunc-adapter) can't pass `InvocationContext` to handlers.
 
-**This** — ~200 lines of application code. No framework, just a pattern.
+**This** — ~350 lines of library code across 3 files. Not a framework — a set of typed wrappers around `app.http()` and `fetch`.
