@@ -4,9 +4,9 @@ import {
   type InvocationContext,
 } from "@azure/functions";
 import { z } from "zod";
-import type { HttpHandlerWithParser } from "./core.js";
+import type { HttpRequestParser, HttpHandlerWithParser } from "./core.js";
 
-// Context propagation
+// Variables
 
 export type VariableKey<T> = symbol & { readonly _type: T };
 
@@ -27,37 +27,35 @@ export function createVars(): Variables {
   };
 }
 
-// Middleware
+// Combination
 
-export type HttpMiddlewareNext = () => Promise<HttpResponseInit>;
+export type NextMiddleware = () => Promise<HttpResponseInit>;
 
-export interface HttpMiddlewareContext {
+export interface MiddlewareContext {
   request: HttpRequest;
   context: InvocationContext;
   vars: Variables;
-  next: HttpMiddlewareNext;
+  next: NextMiddleware;
 }
 
-export type HttpMiddleware<
+export type Middleware<
   TReturn extends HttpResponseInit = HttpResponseInit,
-> = (c: HttpMiddlewareContext) => Promise<TReturn | void>;
-
-// Middleware composition
+> = (c: MiddlewareContext) => Promise<TReturn | void>;
 
 type ExtractMiddlewareReturn<T> =
   T extends (...args: any[]) => Promise<infer R>
     ? Exclude<R, void | undefined>
     : never;
 
-export function combineMiddleware<const T extends readonly HttpMiddleware<any>[]>(
+export function combineMiddleware<const T extends readonly Middleware<any>[]>(
   middlewares: [...T],
-): HttpMiddleware<ExtractMiddlewareReturn<T[number]>> {
+): Middleware<ExtractMiddlewareReturn<T[number]>> {
   return ((c) => {
-    const dispatch = (i: number): HttpMiddlewareNext =>
+    const dispatch = (i: number): NextMiddleware =>
       async () => {
         if (i >= middlewares.length) return c.next();
         let nextResult: HttpResponseInit | undefined;
-        const innerNext: HttpMiddlewareNext = async () => {
+        const innerNext: NextMiddleware = async () => {
           nextResult = await dispatch(i + 1)();
           return nextResult;
         };
@@ -65,37 +63,41 @@ export function combineMiddleware<const T extends readonly HttpMiddleware<any>[]
         return (middlewareResult ?? nextResult)!;
       };
     return dispatch(0)();
-  }) as HttpMiddleware<ExtractMiddlewareReturn<T[number]>>;
+  }) as Middleware<ExtractMiddlewareReturn<T[number]>>;
 }
 
-// Handler
+// Request handling
 
-export interface HttpHandlerContext<TParsed = void> {
+export interface MiddlewareHandlerContext<TParsed = void> {
   request: HttpRequest;
   context: InvocationContext;
   vars: Variables;
   parsed: TParsed;
 }
 
-export type ParsedHttpHandler<
-  TParser extends z.ZodTypeAny | undefined = undefined,
-  TReturn extends HttpResponseInit = HttpResponseInit
-> = (c: HttpHandlerContext<TParser extends z.ZodTypeAny ? z.infer<TParser> : void>) => Promise<TReturn>;
+type ExtractParsed<TParser extends HttpRequestParser | undefined> =
+  TParser extends HttpRequestParser
+    ? (TParser extends { query: infer Q extends z.ZodTypeAny } ? { query: z.infer<Q> } : {}) &
+      (TParser extends { body: infer B extends z.ZodTypeAny } ? { body: z.infer<B> } : {})
+    : void;
 
-// withMiddleware
+export type MiddlewareHandler<
+  TParser extends HttpRequestParser | undefined = undefined,
+  TReturn extends HttpResponseInit = HttpResponseInit
+> = (c: MiddlewareHandlerContext<ExtractParsed<TParser>>) => Promise<TReturn>;
 
 export function withMiddleware<
-  TParser extends z.ZodTypeAny | undefined,
+  TParser extends HttpRequestParser | undefined,
   TReturn extends HttpResponseInit,
-  const TMiddlewares extends readonly HttpMiddleware<any>[],
+  const TMiddlewares extends readonly Middleware<any>[],
 >(
   middlewares: [...TMiddlewares],
-  handler: ParsedHttpHandler<TParser, TReturn>,
+  handler: MiddlewareHandler<TParser, TReturn>,
 ): HttpHandlerWithParser<
   TParser,
   TReturn | ExtractMiddlewareReturn<TMiddlewares[number]>
 > {
-  const middleware: HttpMiddleware = middlewares.length === 1
+  const middleware: Middleware = middlewares.length === 1
     ? middlewares[0]
     : combineMiddleware(middlewares);
 
@@ -103,11 +105,17 @@ export function withMiddleware<
     const vars = createVars();
     let handlerResult: HttpResponseInit | undefined;
 
-    const next: HttpMiddlewareNext = async () => {
+    const next: NextMiddleware = async () => {
       let parsed: unknown = undefined;
       if (parser) {
-        const raw = await request.json();
-        parsed = parser.parse(raw);
+        const result: Record<string, unknown> = {};
+        if (parser.body) {
+          result.body = parser.body.parse(await request.json());
+        }
+        if (parser.query) {
+          result.query = parser.query.parse(Object.fromEntries(request.query));
+        }
+        parsed = result;
       }
       handlerResult = await handler({ request, context, vars, parsed: parsed as any });
       return handlerResult;
@@ -118,7 +126,7 @@ export function withMiddleware<
   }) as HttpHandlerWithParser<TParser, TReturn | ExtractMiddlewareReturn<TMiddlewares[number]>>;
 }
 
-// Catch error middleware
+// Error handling
 
 export const catchError = (async (c) => {
   try {
@@ -133,11 +141,11 @@ export const catchError = (async (c) => {
     c.context.error("Internal Server Error", error);
     return { status: 500, jsonBody: { message: "Internal Server Error" } } as const;
   }
-}) satisfies HttpMiddleware;
+}) satisfies Middleware;
 
 export function withCatchError<
-  TParser extends z.ZodTypeAny | undefined,
+  TParser extends HttpRequestParser | undefined,
   TReturn extends HttpResponseInit,
->(handler: ParsedHttpHandler<TParser, TReturn>) {
+>(handler: MiddlewareHandler<TParser, TReturn>) {
   return withMiddleware([catchError], handler);
 }
