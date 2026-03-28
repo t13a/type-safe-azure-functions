@@ -1,7 +1,7 @@
 export { http, registerAll } from "./core.js";
 export type {
   HttpFunctionDefinition,
-  HttpFunctionParser,
+  HttpRequestParser,
   HttpHandlerWithParser,
 } from "./core.js";
 
@@ -16,9 +16,9 @@ export {
 export type {
   VariableKey,
   Variables,
-  HttpMiddleware,
-  HttpMiddlewareContext,
-  HttpMiddlewareNext,
-  ParsedHttpHandler,
-  HttpHandlerContext,
+  Middleware,
+  MiddlewareContext,
+  NextMiddleware,
+  MiddlewareHandler,
+  MiddlewareHandlerContext,
 } from "./middleware.js";

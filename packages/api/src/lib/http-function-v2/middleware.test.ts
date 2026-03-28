@@ -7,9 +7,9 @@ import {
   catchError,
   withCatchError,
   withMiddleware,
-  type HttpMiddleware,
-  type HttpMiddlewareNext,
-  type ParsedHttpHandler,
+  type Middleware,
+  type NextMiddleware,
+  type MiddlewareHandler,
 } from "./middleware.js";
 import { http, registerAll } from "./core.js";
 import type {
@@ -80,7 +80,7 @@ describe("createVariableKey / createVars", () => {
 describe("catchError", () => {
   it("passes through handler result on success", async () => {
     const expected = { jsonBody: { ok: true } };
-    const next: HttpMiddlewareNext = async () => expected;
+    const next: NextMiddleware = async () => expected;
     const vars = createVars();
     const result = await catchError({ request: mockRequest(), context: mockContext(), vars, next });
     expect(result).toBeUndefined();
@@ -88,7 +88,7 @@ describe("catchError", () => {
 
   it("returns 400 for ZodError", async () => {
     const schema = z.object({ x: z.number() });
-    const next: HttpMiddlewareNext = async () => {
+    const next: NextMiddleware = async () => {
       schema.parse({ x: "not a number" });
       return {};
     };
@@ -99,7 +99,7 @@ describe("catchError", () => {
   });
 
   it("returns 400 for SyntaxError", async () => {
-    const next: HttpMiddlewareNext = async () => {
+    const next: NextMiddleware = async () => {
       throw new SyntaxError("Unexpected token");
     };
     const vars = createVars();
@@ -108,7 +108,7 @@ describe("catchError", () => {
   });
 
   it("returns 500 for unknown errors", async () => {
-    const next: HttpMiddlewareNext = async () => {
+    const next: NextMiddleware = async () => {
       throw new Error("boom");
     };
     const ctx = mockContext();
@@ -125,15 +125,15 @@ describe("combineMiddleware", () => {
     const m1 = (async (c) => {
       order.push(1);
       await c.next();
-    }) satisfies HttpMiddleware;
+    }) satisfies Middleware;
     const m2 = (async (c) => {
       order.push(2);
       await c.next();
-    }) satisfies HttpMiddleware;
+    }) satisfies Middleware;
 
     const combined = combineMiddleware([m1, m2]);
     const vars = createVars();
-    const next: HttpMiddlewareNext = async () => {
+    const next: NextMiddleware = async () => {
       order.push(3);
       return { jsonBody: "done" };
     };
@@ -144,16 +144,16 @@ describe("combineMiddleware", () => {
   it("short-circuits when middleware returns a response", async () => {
     const blocker = (async (_c) => {
       return { status: 403 as const, jsonBody: { message: "Forbidden" } };
-    }) satisfies HttpMiddleware;
+    }) satisfies Middleware;
     const shouldNotRun = vi.fn();
     const m2 = (async (c) => {
       shouldNotRun();
       await c.next();
-    }) satisfies HttpMiddleware;
+    }) satisfies Middleware;
 
     const combined = combineMiddleware([blocker, m2]);
     const vars = createVars();
-    const next: HttpMiddlewareNext = async () => ({ jsonBody: "should not reach" });
+    const next: NextMiddleware = async () => ({ jsonBody: "should not reach" });
     const result = await combined({ request: mockRequest(), context: mockContext(), vars, next });
     expect(result).toMatchObject({ status: 403 });
     expect(shouldNotRun).not.toHaveBeenCalled();
@@ -164,15 +164,15 @@ describe("combineMiddleware", () => {
     const m1 = (async (c) => {
       c.vars.set(key, "admin");
       await c.next();
-    }) satisfies HttpMiddleware;
+    }) satisfies Middleware;
     const m2 = (async (c) => {
       expect(c.vars.get(key)).toBe("admin");
       await c.next();
-    }) satisfies HttpMiddleware;
+    }) satisfies Middleware;
 
     const combined = combineMiddleware([m1, m2]);
     const vars = createVars();
-    const next: HttpMiddlewareNext = async () => ({ jsonBody: "ok" });
+    const next: NextMiddleware = async () => ({ jsonBody: "ok" });
     await combined({ request: mockRequest(), context: mockContext(), vars, next });
   });
 });
@@ -181,7 +181,7 @@ describe("withMiddleware", () => {
   it("parses body with parser and passes to handler", async () => {
     const schema = z.object({ name: z.string() });
     const parser = { body: schema };
-    const handler: ParsedHttpHandler<typeof parser> = async (c) => ({
+    const handler: MiddlewareHandler<typeof parser> = async (c) => ({
       jsonBody: { greeting: `Hello ${c.parsed.body.name}` },
     });
     const wrapped = withMiddleware([catchError], handler);
@@ -193,7 +193,7 @@ describe("withMiddleware", () => {
   it("parses query params with query parser", async () => {
     const schema = z.object({ completed: z.string().transform(s => s === "true").optional() });
     const parser = { query: schema };
-    const handler: ParsedHttpHandler<typeof parser> = async (c) => ({
+    const handler: MiddlewareHandler<typeof parser> = async (c) => ({
       jsonBody: { completed: c.parsed.query.completed },
     });
     const wrapped = withMiddleware([catchError], handler);
@@ -210,7 +210,7 @@ describe("withMiddleware", () => {
     const bodySchema = z.object({ title: z.string() });
     const querySchema = z.object({ dry: z.string().optional() });
     const parser = { body: bodySchema, query: querySchema };
-    const handler: ParsedHttpHandler<typeof parser> = async (c) => ({
+    const handler: MiddlewareHandler<typeof parser> = async (c) => ({
       jsonBody: { title: c.parsed.body.title, dry: c.parsed.query.dry },
     });
     const wrapped = withMiddleware([catchError], handler);
@@ -271,7 +271,7 @@ describe("withMiddleware", () => {
     const setTenant = (async (c) => {
       c.vars.set(key, "acme");
       await c.next();
-    }) satisfies HttpMiddleware;
+    }) satisfies Middleware;
 
     const wrapped = withMiddleware([setTenant, catchError], async (c) => ({
       jsonBody: { tenant: c.vars.get(key) },
@@ -285,7 +285,7 @@ describe("withMiddleware", () => {
     const handlerSpy = vi.fn();
     const blocker = (async (_c) => {
       return { status: 401 as const, jsonBody: { message: "No" } };
-    }) satisfies HttpMiddleware;
+    }) satisfies Middleware;
 
     const wrapped = withMiddleware([blocker], async () => {
       handlerSpy();
@@ -311,7 +311,7 @@ describe("withCatchError", () => {
   it("catches ZodError and returns 400", async () => {
     const schema = z.object({ x: z.number() });
     const parser = { body: schema };
-    const handler: ParsedHttpHandler<typeof parser> = async (c) => ({
+    const handler: MiddlewareHandler<typeof parser> = async (c) => ({
       jsonBody: c.parsed,
     });
     const wrapped = withCatchError(handler);

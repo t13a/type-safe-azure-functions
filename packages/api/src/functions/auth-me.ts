@@ -3,7 +3,7 @@ import {
   withMiddleware,
   createVariableKey,
   catchError,
-  type HttpMiddleware,
+  type Middleware,
 } from "../lib/http-function-v2/index.js";
 
 type User = { name: string };
@@ -30,7 +30,7 @@ const requireAuth = (async (c) => {
   }
   c.vars.set(userKey, user);
   await c.next();
-}) satisfies HttpMiddleware;
+}) satisfies Middleware;
 
 export const authMe = http({
   handler: withMiddleware([requireAuth, catchError], async (c) => {
