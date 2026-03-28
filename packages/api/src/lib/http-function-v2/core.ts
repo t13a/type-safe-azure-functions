@@ -1,6 +1,7 @@
 import {
   type app as App,
   type HttpFunctionOptions,
+  type HttpMethod,
   type HttpRequest,
   type HttpResponseInit,
   type InvocationContext,
@@ -22,10 +23,17 @@ type ExtractResponse<T> = T extends any
     }
   : never;
 
+// Parser
+
+export type HttpFunctionParser = {
+  query?: z.ZodTypeAny;
+  body?: z.ZodTypeAny;
+};
+
 // Handler
 
 export type HttpHandlerWithParser<
-  TParser extends z.ZodTypeAny | undefined = undefined,
+  TParser extends HttpFunctionParser | undefined = undefined,
   TReturn extends HttpResponseInit = HttpResponseInit,
 > = (
   request: HttpRequest,
@@ -38,7 +46,7 @@ export type HttpHandlerWithParser<
 const HttpFunctionDefinitionBrand = Symbol("HttpFunctionDefinition");
 
 export interface HttpFunctionDefinition<
-  TParser extends z.ZodTypeAny | undefined,
+  TParser extends HttpFunctionParser | undefined,
   TResponse,
 > {
   readonly [HttpFunctionDefinitionBrand]: true;
@@ -54,17 +62,14 @@ function isHttpFunctionDefinition(value: unknown): value is HttpFunctionDefiniti
 
 export function http<
   const TOptions extends Omit<HttpFunctionOptions, "handler" | "methods" | "route">,
-  TParser extends z.ZodTypeAny = z.ZodVoid,
+  TParser extends HttpFunctionParser | undefined = undefined,
   TReturn extends HttpResponseInit = HttpResponseInit,
 >(
   options: TOptions & {
     parser?: TParser;
-    handler: HttpHandlerWithParser<TParser extends z.ZodVoid ? undefined : TParser, TReturn>;
+    handler: HttpHandlerWithParser<TParser, TReturn>;
   },
-): HttpFunctionDefinition<
-  TParser extends z.ZodVoid ? undefined : TParser,
-  ExtractResponse<TReturn>
-> {
+): HttpFunctionDefinition<TParser, ExtractResponse<TReturn>> {
   const { handler, parser, ...rest } = options as any;
   return {
     [HttpFunctionDefinitionBrand]: true,
@@ -77,11 +82,11 @@ export function http<
 // Registration
 
 function registerSingle(
-  app: typeof App, name: string, route: string, def: HttpFunctionDefinition<any, any>
+  app: typeof App, name: string, method: HttpMethod, route: string, def: HttpFunctionDefinition<any, any>
 ): void {
   app.http(name, {
     ...def.options,
-    methods: ["POST"],
+    methods: [method],
     route,
     handler: async (
       request: HttpRequest,
@@ -106,7 +111,8 @@ export function registerAll(
     const name = namePrefix ? `${namePrefix}-${key}` : key;
     const route = routePrefix ? `${routePrefix}/${key}` : key;
     if (isHttpFunctionDefinition(value)) {
-      registerSingle(app, name, route, value);
+      const method = key.startsWith("get") ? "GET" : "POST";
+      registerSingle(app, name, method, route, value);
     } else {
       registerAll(app, value, name, route);
     }

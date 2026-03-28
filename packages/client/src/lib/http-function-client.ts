@@ -8,10 +8,23 @@ type TypedResponse<T> =
       : never
     : never;
 
+type ClientInput<P> =
+  (P extends { query: infer Q extends z.ZodTypeAny }
+    ? {} extends z.input<Q> ? { query?: z.input<Q> } : { query: z.input<Q> }
+    : {}) &
+  (P extends { body: infer B extends z.ZodTypeAny } ? { body: z.input<B> } : {}) &
+  { headers?: HeadersInit };
+
+type NeedsRequiredInput<P> =
+  P extends { body: z.ZodTypeAny } ? true
+  : P extends { query: infer Q extends z.ZodTypeAny }
+  ? {} extends z.input<Q> ? false : true
+  : false;
+
 type HttpFunctionClientMethod<T> = T extends HttpFunctionDefinition<infer P, any>
-  ? P extends z.ZodTypeAny
-    ? (input: { body: z.input<P>; headers?: HeadersInit }) => Promise<TypedResponse<T>>
-    : (input?: { headers?: HeadersInit }) => Promise<TypedResponse<T>>
+  ? NeedsRequiredInput<P> extends true
+    ? (input: ClientInput<P>) => Promise<TypedResponse<T>>
+    : (input?: ClientInput<P>) => Promise<TypedResponse<T>>
   : never;
 
 type HttpFunctionClient<T> = {
@@ -25,14 +38,29 @@ type HttpFunctionClient<T> = {
 export function createHttpFunctionClient<
   T extends Record<string, any>,
 >(baseUrl: string, pathPrefix = "/api"): HttpFunctionClient<T> {
-  const fn = async (input?: { body?: unknown; headers?: HeadersInit }) => {
-    const headers = new Headers({ "Content-Type": "application/json" });
-    new Headers(input?.headers).forEach((v, k) => headers.set(k, v));
-    return fetch(`${baseUrl}${pathPrefix}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(input?.body ?? {}),
-    });
+  const fn = async (input?: { query?: Record<string, string | undefined>; body?: unknown; headers?: HeadersInit }) => {
+    const url = new URL(`${baseUrl}${pathPrefix}`);
+    if (input?.query) {
+      for (const [k, v] of Object.entries(input.query)) {
+        if (v !== undefined) url.searchParams.set(k, v);
+      }
+    }
+
+    const lastSegment = pathPrefix.split("/").at(-1) ?? "";
+    if (lastSegment.startsWith("get")) {
+      return fetch(url.toString(), {
+        method: "GET",
+        headers: new Headers(input?.headers),
+      });
+    } else {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      new Headers(input?.headers).forEach((v, k) => headers.set(k, v));
+      return fetch(url.toString(), {
+        method: "POST",
+        headers,
+        body: JSON.stringify(input?.body ?? {}),
+      });
+    }
   };
 
   return new Proxy(fn as unknown as HttpFunctionClient<T>, {

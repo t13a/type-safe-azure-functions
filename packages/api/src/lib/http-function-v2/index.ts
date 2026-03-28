@@ -1,6 +1,7 @@
 export { http, registerAll } from "./core.js";
 export type {
   HttpFunctionDefinition,
+  HttpFunctionParser,
   HttpHandlerWithParser,
 } from "./core.js";
 

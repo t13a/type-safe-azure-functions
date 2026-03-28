@@ -6,13 +6,29 @@ const client = createHttpFunctionClient<typeof defs>("http://localhost:7071");
 
 describe("todo API", () => {
   it("list all todos", async () => {
-    const res = await client.listTodos();
+    const res = await client.getTodos();
     if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
     const todos = await res.json();
     expect(todos[0].title).toBe("Wake early");
     expect(todos[0].completed).toBe(true);
     expect(todos[1].title).toBe("Sleep early");
     expect(todos[1].completed).toBe(false);
+  });
+
+  it("filters todos by completed=true", async () => {
+    const res = await client.getTodos({ query: { completed: "true" } });
+    if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
+    const todos = await res.json();
+    expect(todos.length).toBeGreaterThan(0);
+    expect(todos.every((t: any) => t.completed === true)).toBe(true);
+  });
+
+  it("filters todos by completed=false", async () => {
+    const res = await client.getTodos({ query: { completed: "false" } });
+    if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
+    const todos = await res.json();
+    expect(todos.length).toBeGreaterThan(0);
+    expect(todos.every((t: any) => t.completed === false)).toBe(true);
   });
 
   it("creates a todo", async () => {
@@ -59,8 +75,8 @@ describe("todo API", () => {
 });
 
 describe("management API", () => {
-  it("shows stats", async () => {
-    const res = await client.management.showStats();
+  it("gets stats", async () => {
+    const res = await client.management.getStats();
     if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
     const stats = await res.json();
     expect(stats.totalUsers).toBe(42);

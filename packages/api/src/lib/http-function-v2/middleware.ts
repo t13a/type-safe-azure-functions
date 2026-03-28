@@ -4,7 +4,15 @@ import {
   type InvocationContext,
 } from "@azure/functions";
 import { z } from "zod";
-import type { HttpHandlerWithParser } from "./core.js";
+import type { HttpFunctionParser, HttpHandlerWithParser } from "./core.js";
+
+// Parsed type extraction
+
+type ExtractParsed<TParser extends HttpFunctionParser | undefined> =
+  TParser extends HttpFunctionParser
+    ? (TParser extends { query: infer Q extends z.ZodTypeAny } ? { query: z.infer<Q> } : {}) &
+      (TParser extends { body: infer B extends z.ZodTypeAny } ? { body: z.infer<B> } : {})
+    : void;
 
 // Context propagation
 
@@ -78,14 +86,14 @@ export interface HttpHandlerContext<TParsed = void> {
 }
 
 export type ParsedHttpHandler<
-  TParser extends z.ZodTypeAny | undefined = undefined,
+  TParser extends HttpFunctionParser | undefined = undefined,
   TReturn extends HttpResponseInit = HttpResponseInit
-> = (c: HttpHandlerContext<TParser extends z.ZodTypeAny ? z.infer<TParser> : void>) => Promise<TReturn>;
+> = (c: HttpHandlerContext<ExtractParsed<TParser>>) => Promise<TReturn>;
 
 // withMiddleware
 
 export function withMiddleware<
-  TParser extends z.ZodTypeAny | undefined,
+  TParser extends HttpFunctionParser | undefined,
   TReturn extends HttpResponseInit,
   const TMiddlewares extends readonly HttpMiddleware<any>[],
 >(
@@ -106,8 +114,14 @@ export function withMiddleware<
     const next: HttpMiddlewareNext = async () => {
       let parsed: unknown = undefined;
       if (parser) {
-        const raw = await request.json();
-        parsed = parser.parse(raw);
+        const result: Record<string, unknown> = {};
+        if (parser.body) {
+          result.body = parser.body.parse(await request.json());
+        }
+        if (parser.query) {
+          result.query = parser.query.parse(Object.fromEntries(request.query));
+        }
+        parsed = result;
       }
       handlerResult = await handler({ request, context, vars, parsed: parsed as any });
       return handlerResult;
@@ -136,7 +150,7 @@ export const catchError = (async (c) => {
 }) satisfies HttpMiddleware;
 
 export function withCatchError<
-  TParser extends z.ZodTypeAny | undefined,
+  TParser extends HttpFunctionParser | undefined,
   TReturn extends HttpResponseInit,
 >(handler: ParsedHttpHandler<TParser, TReturn>) {
   return withMiddleware([catchError], handler);

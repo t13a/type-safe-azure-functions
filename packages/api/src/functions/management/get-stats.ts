@@ -1,6 +1,6 @@
 import { http, withCatchError } from "../../lib/http-function-v2/index.js";
 
-export const showStats = http({
+export const getStats = http({
   handler: withCatchError(async () => {
     return {
       jsonBody: {

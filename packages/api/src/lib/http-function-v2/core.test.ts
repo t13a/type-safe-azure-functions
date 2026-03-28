@@ -10,12 +10,13 @@ import type {
 
 // Test helpers
 
-function mockRequest(body?: unknown): HttpRequest {
+function mockRequest(body?: unknown, query?: Record<string, string>): HttpRequest {
   return {
     json: body === undefined
       ? async () => { throw new SyntaxError("Unexpected end of JSON input"); }
       : async () => body,
     headers: new Headers(),
+    query: new URLSearchParams(query ?? {}),
   } as unknown as HttpRequest;
 }
 
@@ -58,10 +59,10 @@ describe("http", () => {
   it("stores parser when provided", () => {
     const schema = z.object({ x: z.number() });
     const def = http({
-      parser: schema,
+      parser: { body: schema },
       handler: async (request, context, parser) => ({ jsonBody: "ok" }),
     });
-    expect(def.parser).toBe(schema);
+    expect(def.parser).toEqual({ body: schema });
   });
 
   it("stores Azure Functions options", () => {
@@ -85,6 +86,35 @@ describe("registerAll", () => {
     expect(registered.get("foo")?.route).toBe("foo");
     expect(registered.get("bar")?.route).toBe("bar");
     expect(registered.get("foo")?.methods).toEqual(["POST"]);
+  });
+
+  it("registers GET for keys starting with 'get'", () => {
+    const { app, registered } = mockApp();
+    const def = http({ handler: async () => ({ jsonBody: "ok" }) });
+
+    registerAll(app, { getTodos: def });
+
+    expect(registered.get("getTodos")?.methods).toEqual(["GET"]);
+  });
+
+  it("registers GET for nested keys starting with 'get'", () => {
+    const { app, registered } = mockApp();
+    const def = http({ handler: async () => ({ jsonBody: "ok" }) });
+
+    registerAll(app, { management: { getStats: def } });
+
+    expect(registered.get("management-getStats")?.methods).toEqual(["GET"]);
+    expect(registered.get("management-getStats")?.route).toBe("management/getStats");
+  });
+
+  it("registers POST for non-get keys", () => {
+    const { app, registered } = mockApp();
+    const def = http({ handler: async () => ({ jsonBody: "ok" }) });
+
+    registerAll(app, { createTodo: def, listTodos: def });
+
+    expect(registered.get("createTodo")?.methods).toEqual(["POST"]);
+    expect(registered.get("listTodos")?.methods).toEqual(["POST"]);
   });
 
   it("registers nested definitions via subRoute with prefixed routes and names", () => {
@@ -113,11 +143,12 @@ describe("registerAll", () => {
 
   it("calls handler with (request, context, parser)", async () => {
     const { app, registered } = mockApp();
-    const schema = z.object({ x: z.number() });
+    const bodySchema = z.object({ x: z.number() });
+    const parserDef = { body: bodySchema };
     const def = http({
-      parser: schema,
+      parser: parserDef,
       handler: async (request, context, parser) => {
-        return { jsonBody: { parser: parser === schema } };
+        return { jsonBody: { parser: parser === parserDef } };
       },
     });
 

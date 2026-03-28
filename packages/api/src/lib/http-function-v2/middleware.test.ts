@@ -9,6 +9,7 @@ import {
   withMiddleware,
   type HttpMiddleware,
   type HttpMiddlewareNext,
+  type ParsedHttpHandler,
 } from "./middleware.js";
 import { http, registerAll } from "./core.js";
 import type {
@@ -20,12 +21,17 @@ import type {
 
 // Test helpers
 
-function mockRequest(body?: unknown, headers?: Record<string, string>): HttpRequest {
+function mockRequest(
+  body?: unknown,
+  headers?: Record<string, string>,
+  query?: Record<string, string>,
+): HttpRequest {
   return {
     json: body === undefined
       ? async () => { throw new SyntaxError("Unexpected end of JSON input"); }
       : async () => body,
     headers: new Headers(headers),
+    query: new URLSearchParams(query ?? {}),
   } as unknown as HttpRequest;
 }
 
@@ -174,12 +180,47 @@ describe("combineMiddleware", () => {
 describe("withMiddleware", () => {
   it("parses body with parser and passes to handler", async () => {
     const schema = z.object({ name: z.string() });
-    const wrapped = withMiddleware([catchError], async (c) => ({
-      jsonBody: { greeting: `Hello ${c.parsed.name}` },
-    }));
+    const parser = { body: schema };
+    const handler: ParsedHttpHandler<typeof parser> = async (c) => ({
+      jsonBody: { greeting: `Hello ${c.parsed.body.name}` },
+    });
+    const wrapped = withMiddleware([catchError], handler);
 
-    const result = await wrapped(mockRequest({ name: "World" }), mockContext(), schema);
+    const result = await wrapped(mockRequest({ name: "World" }), mockContext(), parser);
     expect(result).toEqual({ jsonBody: { greeting: "Hello World" } });
+  });
+
+  it("parses query params with query parser", async () => {
+    const schema = z.object({ completed: z.string().transform(s => s === "true").optional() });
+    const parser = { query: schema };
+    const handler: ParsedHttpHandler<typeof parser> = async (c) => ({
+      jsonBody: { completed: c.parsed.query.completed },
+    });
+    const wrapped = withMiddleware([catchError], handler);
+
+    const result = await wrapped(
+      mockRequest(undefined, {}, { completed: "true" }),
+      mockContext(),
+      parser,
+    );
+    expect(result).toEqual({ jsonBody: { completed: true } });
+  });
+
+  it("parses both body and query when both are provided", async () => {
+    const bodySchema = z.object({ title: z.string() });
+    const querySchema = z.object({ dry: z.string().optional() });
+    const parser = { body: bodySchema, query: querySchema };
+    const handler: ParsedHttpHandler<typeof parser> = async (c) => ({
+      jsonBody: { title: c.parsed.body.title, dry: c.parsed.query.dry },
+    });
+    const wrapped = withMiddleware([catchError], handler);
+
+    const result = await wrapped(
+      mockRequest({ title: "Hello" }, {}, { dry: "run" }),
+      mockContext(),
+      parser,
+    );
+    expect(result).toEqual({ jsonBody: { title: "Hello", dry: "run" } });
   });
 
   it("returns handler result when no parser", async () => {
@@ -197,7 +238,7 @@ describe("withMiddleware", () => {
       jsonBody: c.parsed,
     }));
 
-    const result = await wrapped(mockRequest({ count: "nope" }), mockContext(), schema);
+    const result = await wrapped(mockRequest({ count: "nope" }), mockContext(), { body: schema });
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 
@@ -207,7 +248,21 @@ describe("withMiddleware", () => {
       jsonBody: c.parsed,
     }));
 
-    const result = await wrapped(mockRequest(undefined), mockContext(), schema);
+    const result = await wrapped(mockRequest(undefined), mockContext(), { body: schema });
+    expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
+  });
+
+  it("returns 400 when query fails validation", async () => {
+    const schema = z.object({ count: z.number() });
+    const wrapped = withMiddleware([catchError], async (c) => ({
+      jsonBody: c.parsed,
+    }));
+
+    const result = await wrapped(
+      mockRequest(undefined, {}, { count: "not-a-number" }),
+      mockContext(),
+      { query: schema },
+    );
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 
@@ -255,11 +310,13 @@ describe("withCatchError", () => {
 
   it("catches ZodError and returns 400", async () => {
     const schema = z.object({ x: z.number() });
-    const wrapped = withCatchError(async (c) => ({
+    const parser = { body: schema };
+    const handler: ParsedHttpHandler<typeof parser> = async (c) => ({
       jsonBody: c.parsed,
-    }));
+    });
+    const wrapped = withCatchError(handler);
 
-    const result = await wrapped(mockRequest({ x: "bad" }), mockContext(), schema);
+    const result = await wrapped(mockRequest({ x: "bad" }), mockContext(), parser);
     expect(result).toMatchObject({ status: 400, jsonBody: { message: "Bad Request" } });
   });
 });
@@ -268,9 +325,9 @@ describe("handler integration (end-to-end)", () => {
   it("works with http() + withMiddleware + registerAll", async () => {
     const { app, registered } = mockApp();
     const def = http({
-      parser: z.object({ name: z.string() }),
+      parser: { body: z.object({ name: z.string() }) },
       handler: withCatchError(async (c) => ({
-        jsonBody: { greeting: `Hello ${c.parsed.name}` },
+        jsonBody: { greeting: `Hello ${c.parsed.body.name}` },
       })),
     });
 

@@ -1,3 +1,3 @@
-import { showStats } from "./show-stats.js";
+import { getStats } from "./get-stats.js";
 
-export const defs = { showStats } as const;
+export const defs = { getStats } as const;

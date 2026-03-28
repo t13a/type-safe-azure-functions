@@ -22,9 +22,9 @@ This library trades full Azure Functions compatibility for simplicity. The follo
 
 | Constraint | Value |
 |---|---|
-| HTTP method | Always `POST` |
+| HTTP method | `GET` for endpoints whose key starts with `get`, otherwise `POST` |
 | Route | `/api/{path}` (derived from definition tree keys) |
-| Request format | JSON body + HTTP headers (no URL path/query params) |
+| Request format | JSON body (`body`) and/or URL query params (`query`) |
 
 `methods` and `route` are excluded from `http()` options — specifying them is a compile error. If you need custom routing or other HTTP methods, use `app.http()` directly.
 
@@ -37,11 +37,11 @@ packages/
 │   │   ├── functions/
 │   │   │   ├── management/
 │   │   │   │   ├── index.ts              # Nested definition map
-│   │   │   │   └── show-stats.ts
+│   │   │   │   └── get-stats.ts
 │   │   │   ├── auth-me.ts
 │   │   │   ├── create-todo.ts
-│   │   │   ├── index.ts                  # Root definition map (shared by server and client)
-│   │   │   └── list-todos.ts
+│   │   │   ├── get-todos.ts
+│   │   │   └── index.ts                  # Root definition map (shared by server and client)
 │   │   ├── lib/
 │   │   │   └── http-function-v2/
 │   │   │       ├── index.ts              # Barrel re-export
@@ -95,38 +95,99 @@ npm run dev          # terminal 1
 npm run test:int     # terminal 2
 ```
 
+## HTTP method convention
+
+Endpoint keys are used to determine the HTTP method: keys that start with `get` use `GET`, all others use `POST`. This is a convention — no explicit `method` option is needed.
+
+```typescript
+export const defs = {
+  getTodos,          // → GET  /api/getTodos
+  createTodo,        // → POST /api/createTodo
+  management: {
+    getStats,        // → GET  /api/management/getStats
+  },
+} as const;
+```
+
+`GET` requests are cache-friendly. Whether responses are actually cached depends on the load balancer and application-level cache headers — the framework only sets the method.
+
 ## Defining functions
 
-Use `http()` to declare an endpoint with its validation schema. The function name used in `functions/index.ts` becomes both the Azure Functions name and the client method name.
+Use `http()` to declare an endpoint. The `parser` option accepts a `{ query?, body? }` object to validate URL query parameters and/or the request body independently. Either or both can be omitted.
+
+### POST endpoint with body validation
 
 ```typescript
 import { z } from "zod";
 import { http, withCatchError } from "../lib/http-function-v2/index.js";
 
 export const createTodo = http({
-  parser: z.object({
-    title: z.string().min(1),
-    completed: z.boolean().optional().default(false),
-  }),
+  parser: {
+    body: z.object({
+      title: z.string().min(1),
+      completed: z.boolean().optional().default(false),
+    }),
+  },
   handler: withCatchError(async (c) => {
-    c.context.log(`Creating todo: ${c.parsed.title}`);
+    c.context.log(`Creating todo: ${c.parsed.body.title}`);
 
     return {
       jsonBody: { // ← response type inferred from here
         id: crypto.randomUUID(),
-        title: c.parsed.title,
-        completed: c.parsed.completed,
+        title: c.parsed.body.title,
+        completed: c.parsed.body.completed,
       },
     };
   }),
 });
 ```
 
-- `http()` defines an endpoint. The `handler` receives `(request, context, parser)` — but when wrapped with `withCatchError` or `withMiddleware`, the handler receives a context object `c` with `request`, `context`, `vars`, and `parsed` properties instead
-- `parser` takes a Zod schema directly — the parsed result is available via `c.parsed`
-- When `parser` is omitted, `c.parsed` is typed as `void`
+### GET endpoint with query parameter validation
+
+Query parameter values are always strings. Use Zod transforms or `z.coerce.*` to convert them to the appropriate type.
+
+```typescript
+import { z } from "zod";
+import { http, withCatchError } from "../lib/http-function-v2/index.js";
+
+export const getTodos = http({
+  parser: {
+    query: z.object({
+      // z.string().transform(...).optional() keeps `undefined` distinct from `false`
+      completed: z.string().transform(s => s === "true").optional(),
+    }),
+  },
+  handler: withCatchError(async (c) => {
+    const todos = [ /* ... */ ];
+    const { completed } = c.parsed.query;
+    return {
+      jsonBody: completed === undefined ? todos : todos.filter(t => t.completed === completed),
+    };
+  }),
+});
+```
+
+### Combined query + body
+
+```typescript
+export const someEndpoint = http({
+  parser: {
+    query: z.object({ dryRun: z.string().transform(s => s === "true").optional() }),
+    body:  z.object({ title: z.string() }),
+  },
+  handler: withCatchError(async (c) => {
+    if (c.parsed.query.dryRun) return { jsonBody: { ok: true } };
+    // use c.parsed.body.title ...
+  }),
+});
+```
+
+- When `parser` is omitted entirely, `c.parsed` is typed as `void`
+- When only `query` is provided, `c.parsed` is `{ query: ... }`
+- When only `body` is provided, `c.parsed` is `{ body: ... }`
+- When both are provided, `c.parsed` is `{ query: ..., body: ... }`
 - `withCatchError(handler)` is a shortcut for `withMiddleware([catchError], handler)` — it handles `ZodError` (400), `SyntaxError` (400), and unhandled exceptions (500)
-- The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler` — those are controlled by the framework. `authLevel`, `retry`, and other options work as-is.
+- The options object accepts any `HttpFunctionOptions` from `@azure/functions` **except** `methods`, `route`, and `handler`. `authLevel`, `retry`, and other options work as-is.
 
 ## Middleware
 
@@ -188,19 +249,19 @@ Definition maps can be nested to create path-based routing. `registerAll` traver
 
 ```typescript
 // functions/management/index.ts
-import { showStats } from "./show-stats.js";
-export const defs = { showStats } as const;
+import { getStats } from "./get-stats.js";
+export const defs = { getStats } as const;
 
 // functions/index.ts
 import { defs as management } from "./management/index.js";
 
-export const defs = { management, listTodos, createTodo, authMe } as const;
+export const defs = { management, getTodos, createTodo, authMe } as const;
 ```
 
-This registers `showStats` at `/api/management/showStats`. The client mirrors the same structure:
+This registers `getStats` at `GET /api/management/getStats`. The client mirrors the same structure:
 
 ```typescript
-const res = await client.management.showStats();
+const res = await client.management.getStats();
 ```
 
 ## Registering functions
@@ -227,8 +288,14 @@ import { createHttpFunctionClient } from "./lib/http-function-client.js";
 
 const client = createHttpFunctionClient<typeof defs>("http://localhost:7071");
 
-// Status code narrows the json() return type
+// GET with optional query params
+const allTodos = await client.getTodos();
+const completedTodos = await client.getTodos({ query: { completed: "true" } });
+
+// POST with body (required)
 const res = await client.createTodo({ body: { title: "Buy milk" } });
+
+// Status code narrows the json() return type
 if (res.status === 200) {
   const todo = await res.json();
   // todo: { id: string; title: string; completed: boolean }
@@ -253,9 +320,13 @@ if (authRes.status === 200) {
 }
 ```
 
-The client returns a standard `Response` with a typed `json()` method. Check `res.status` yourself — no magic error throwing. Error response shapes are inferred from the server's middleware (or `catchError` when omitted), so custom error types flow to the client automatically.
+The client automatically determines the HTTP method from the endpoint name:
+- Names starting with `get` → `GET` request: query params are serialized into the URL, no request body is sent
+- All other names → `POST` request: input is JSON-serialized as the request body
 
-Headers are passed as `HeadersInit` (the standard fetch type) — `Record<string, string>`, `Headers`, or `string[][]` all work. User-provided headers are merged with the default `Content-Type: application/json`, and user values take precedence.
+For `GET` endpoints, the `query` field in the client input maps directly to URL query parameters. If all fields in the query schema are optional, `input` itself is also optional. If any field is required, the caller must provide `query`.
+
+Headers are passed as `HeadersInit` (the standard fetch type) — `Record<string, string>`, `Headers`, or `string[][]` all work. For `POST` requests, user-provided headers are merged with the default `Content-Type: application/json`, and user values take precedence.
 
 ## Adding a new endpoint
 
